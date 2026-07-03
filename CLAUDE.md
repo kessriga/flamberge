@@ -19,9 +19,9 @@ Standalone Rust CLI that reimplements the **DeDRM_tools** Calibre plugins (ebook
 - Errors: `thiserror` in libs, `anyhow` in the CLI. Never `panic!`/`unwrap` on a real code path.
 
 ## Status (what's real vs stub)
-- **Real + tested:** all of `flamberge-crypto` (PC1, Topaz, AES CBC/ECB/CTR, DES, RC4, CRC-32, PBKDF2, PKCS#7); `flamberge-formats::palmdb` + `mobi`; `flamberge-keys` offline generators (`pid`, `ignoble`, `ereader`, `kobo::derive_userkeys`); the **Mobipocket scheme end-to-end** (`flamberge-schemes::mobipocket`, wired through the CLI).
-- **Stubbed** (return `Unimplemented`, doc-comment points at a spec §): all `flamberge-schemes` decrypt bodies *except mobipocket*, the other `flamberge-formats` containers, and platform key-extraction (`kindle`, `adobe`, `kobo::discover_userkeys`).
-- **Next vertical slice:** Topaz (§5) — TPZ0 container parser (TASK-4), then dkey → book-key → records (TASK-5).
+- **Real + tested:** all of `flamberge-crypto` (PC1, Topaz, AES CBC/ECB/CTR, DES, RC4, CRC-32, PBKDF2, PKCS#7); `flamberge-formats::palmdb`, `mobi` + `topaz_container` (TPZ0 header/payload/metadata parsing); `flamberge-keys` offline generators (`pid`, `ignoble`, `ereader`, `kobo::derive_userkeys`); the **Mobipocket scheme end-to-end** (`flamberge-schemes::mobipocket`, wired through the CLI).
+- **Stubbed** (return `Unimplemented`, doc-comment points at a spec §): all `flamberge-schemes` decrypt bodies *except mobipocket* (Topaz's container is parsed, but its DRM/decrypt is not), the remaining `flamberge-formats` containers (`ion`, `kfx_zip`, `ocf`, `pdf`), and platform key-extraction (`kindle`, `adobe`, `kobo::discover_userkeys`).
+- **Next vertical slice:** Topaz DRM (§5.3–5.4) — dkey → book-key → records (TASK-5), building on the TPZ0 container parser (TASK-4, done).
 
 ## Implementation gotchas (from the analysis)
 - PC1 and Topaz require **wrapping u32 arithmetic** — the tested ports live in `flamberge-crypto`; reuse them, don't reinvent.
