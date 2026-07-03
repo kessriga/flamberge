@@ -13,7 +13,7 @@ references:
   - docs/DEDRM_SCHEMES.md
   - ../../external/DeDRM_tools/DeDRM_plugin/erdr2pml.py
 modified_files:
-  - crates/dedrm-schemes/src/ereader.rs
+  - crates/flamberge-schemes/src/ereader.rs
 priority: low
 ordinal: 13000
 ---
@@ -21,7 +21,7 @@ ordinal: 13000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Implement dedrm-schemes::ereader using the PalmDB parser (dedrm-formats::palmdb) and the DES helpers already in dedrm-crypto (ecb_decrypt, fix_key), plus the user-key generator in dedrm-keys::ereader.
+Implement flamberge-schemes::ereader using the PalmDB parser (flamberge-formats::palmdb) and the DES helpers already in flamberge-crypto (ecb_decrypt, fix_key), plus the user-key generator in flamberge-keys::ereader.
 
 Flow (§8): validate record-0 version (259/260/272); parse record 1 (DES key = first 8 bytes via fix_key), decrypt last 8 bytes to get cookie_shuf/cookie_size (range-checked), decrypt the last cookie_size bytes, and unshuffle. Read the version-dependent encrypted-key + SHA-1 offsets from the header, recover content_key = DES(fix_key(user_key), encrypted_key), and validate SHA1(content_key)==stored digest. Decrypt text records (records 1..num_text_pages) via zlib(DES(fix_key(content_key), record)); handle footnotes/sidebars (v272) with the XOR table. Emit PML (+ images) as a .pmlz (ZIP_STORED), with cp1252 high-byte escaping. Original: erdr2pml.py.
 <!-- SECTION:DESCRIPTION:END -->
@@ -32,7 +32,7 @@ Flow (§8): validate record-0 version (259/260/272); parse record 1 (DES key = f
 - [ ] #2 content_key = DES(fix_key(user_key), encrypted_key) is validated against the stored SHA-1; wrong name/CC is rejected clearly
 - [ ] #3 Text records decrypt via zlib(DES(fix_key(content_key), record)); v272 footnotes/sidebars handled via the XOR table
 - [ ] #4 Output is a .pmlz (stored) with images extracted and cp1252 high bytes escaped to \a###
-- [ ] #5 Integration test decrypts a synthesized eReader .pdb using a key from dedrm-keys::ereader and asserts PML content
+- [ ] #5 Integration test decrypts a synthesized eReader .pdb using a key from flamberge-keys::ereader and asserts PML content
 <!-- AC:END -->
 
 ## Definition of Done

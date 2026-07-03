@@ -16,7 +16,7 @@ references:
   - ../../external/DeDRM_tools/DeDRM_plugin/ineptepub.py
   - ../../external/DeDRM_tools/DeDRM_plugin/ignobleepub.py
 modified_files:
-  - crates/dedrm-formats/src/ocf.rs
+  - crates/flamberge-formats/src/ocf.rs
 priority: medium
 ordinal: 8000
 ---
@@ -24,7 +24,7 @@ ordinal: 8000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Implement dedrm-formats::ocf, the shared EPUB layer for both Adobe ADEPT and B&N ignoble. Read `META-INF/rights.xml` (extract the base64 `adept:encryptedKey` text) and `META-INF/encryption.xml` (collect the set of encrypted file paths from `enc:CipherReference@URI`). Provide a detector for ADEPT vs B&N (both present these files; disambiguate by the wrapped-key length: 172 chars = ADEPT/1024-bit RSA, 64 chars = B&N). Provide a repackaging writer that emits a new zip with `mimetype` stored first (ZIP_STORED) and the rest deflated, preserving entry metadata, dropping rights.xml/encryption.xml, and replacing decrypted members.
+Implement flamberge-formats::ocf, the shared EPUB layer for both Adobe ADEPT and B&N ignoble. Read `META-INF/rights.xml` (extract the base64 `adept:encryptedKey` text) and `META-INF/encryption.xml` (collect the set of encrypted file paths from `enc:CipherReference@URI`). Provide a detector for ADEPT vs B&N (both present these files; disambiguate by the wrapped-key length: 172 chars = ADEPT/1024-bit RSA, 64 chars = B&N). Provide a repackaging writer that emits a new zip with `mimetype` stored first (ZIP_STORED) and the rest deflated, preserving entry metadata, dropping rights.xml/encryption.xml, and replacing decrypted members.
 
 This is I/O + XML only; the crypto lives in the scheme tasks. Spec: docs/DEDRM_SCHEMES.md §4.4 / §7.3. Original: ineptepub.py, ignobleepub.py.
 <!-- SECTION:DESCRIPTION:END -->

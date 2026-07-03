@@ -13,7 +13,7 @@ references:
   - docs/DEDRM_SCHEMES.md
   - ../../external/DeDRM_tools/DeDRM_plugin/adobekey.py
 modified_files:
-  - crates/dedrm-keys/src/adobe.rs
+  - crates/flamberge-keys/src/adobe.rs
 priority: low
 ordinal: 16000
 ---
@@ -21,7 +21,7 @@ ordinal: 16000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Implement dedrm-keys::adobe::extract_keys to recover the ADEPT RSA private key DER from the local Adobe Digital Editions install.
+Implement flamberge-keys::adobe::extract_keys to recover the ADEPT RSA private key DER from the local Adobe Digital Editions install.
 
 macOS (fully offline): locate `activation.dat` under `~/Library/Application Support/Adobe/Digital Editions`, XPath the `adept:privateLicenseKey`, base64-decode, strip the 26-byte header → DER. Windows (feature-gated `windows-dpapi`): build the 32-byte entropy (volume serial + CPUID leaf-0 vendor + leaf-1 signature low-3-bytes + username), CryptUnprotectData the Device `key` → keykey, then AES-128-CBC (zero IV) decrypt each `privateLicenseKey` and strip 26-byte header + PKCS#7. Return DER keys into KeyStore.adept_keys. Off-supported-platform, return a clear Unsupported error. Spec: docs/DEDRM_SCHEMES.md §7.2. Original: adobekey.py.
 <!-- SECTION:DESCRIPTION:END -->

@@ -1,11 +1,11 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/dedrm-crypto",
-    "crates/dedrm-formats",
-    "crates/dedrm-keys",
-    "crates/dedrm-schemes",
-    "crates/dedrm-cli",
+    "crates/flamberge-crypto",
+    "crates/flamberge-formats",
+    "crates/flamberge-keys",
+    "crates/flamberge-schemes",
+    "crates/flamberge-cli",
 ]
 
 [workspace.package]
@@ -13,16 +13,16 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.85"
 license = "GPL-3.0-or-later"
-repository = "https://github.com/kessriga/dedrm"
+repository = "https://github.com/kessriga/flamberge"
 authors = ["Kessriga Jeukal"]
 
 # Shared dependency versions. Individual crates opt in via `dep.workspace = true`.
 [workspace.dependencies]
 # workspace-internal
-dedrm-crypto = { path = "crates/dedrm-crypto" }
-dedrm-formats = { path = "crates/dedrm-formats" }
-dedrm-keys = { path = "crates/dedrm-keys" }
-dedrm-schemes = { path = "crates/dedrm-schemes" }
+flamberge-crypto = { path = "crates/flamberge-crypto" }
+flamberge-formats = { path = "crates/flamberge-formats" }
+flamberge-keys = { path = "crates/flamberge-keys" }
+flamberge-schemes = { path = "crates/flamberge-schemes" }
 
 # errors
 thiserror = "1"

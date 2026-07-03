@@ -18,8 +18,8 @@ references:
   - ../../external/DeDRM_tools/DeDRM_plugin/mobidedrm.py
   - ../../external/DeDRM_tools/DeDRM_plugin/kgenpids.py
 modified_files:
-  - crates/dedrm-schemes/src/mobipocket.rs
-  - crates/dedrm-schemes/src/error.rs
+  - crates/flamberge-schemes/src/mobipocket.rs
+  - crates/flamberge-schemes/src/error.rs
 priority: high
 ordinal: 2000
 ---
@@ -27,9 +27,9 @@ ordinal: 2000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Implement the full Mobipocket decrypt path in dedrm-schemes::mobipocket, composing the MOBI header parser (task-1, provides record-0 fields, the DRM block, and rec209/token) with the existing PC1 cipher (dedrm-crypto::pc1) and PID helpers (dedrm-keys::pid).
+Implement the full Mobipocket decrypt path in flamberge-schemes::mobipocket, composing the MOBI header parser (task-1, provides record-0 fields, the DRM block, and rec209/token) with the existing PC1 cipher (flamberge-crypto::pc1) and PID helpers (flamberge-keys::pid).
 
-Type-2 flow: for each candidate PID, `temp_key = PC1::encrypt(KEYVEC1, pid.pad16)`, checksum-filter vouchers on byte 0x0C, `PC1::decrypt(temp_key, cookie)`, accept when verification==ver and (flags & 0x1F)==1; recover the 16-byte finalkey; PID-less fallback with KEYVEC1. Type-1 flow: PC1-decrypt the stored book key with T1_KEYVEC. Then decrypt text records 1..=records, stripping trailing-data bytes (getSizeOfTrailingDataEntries) before PC1 and re-appending them. Also expand candidate PIDs from serials/rec209/token (complete dedrm-keys::pid getKindlePids/getK4Pids variants as needed) and normalize 10-char PIDs to 8.
+Type-2 flow: for each candidate PID, `temp_key = PC1::encrypt(KEYVEC1, pid.pad16)`, checksum-filter vouchers on byte 0x0C, `PC1::decrypt(temp_key, cookie)`, accept when verification==ver and (flags & 0x1F)==1; recover the 16-byte finalkey; PID-less fallback with KEYVEC1. Type-1 flow: PC1-decrypt the stored book key with T1_KEYVEC. Then decrypt text records 1..=records, stripping trailing-data bytes (getSizeOfTrailingDataEntries) before PC1 and re-appending them. Also expand candidate PIDs from serials/rec209/token (complete flamberge-keys::pid getKindlePids/getK4Pids variants as needed) and normalize 10-char PIDs to 8.
 
 Spec: docs/DEDRM_SCHEMES.md §2.3–2.5. Original: mobidedrm.py (parseDRM, processBook), kgenpids.py.
 <!-- SECTION:DESCRIPTION:END -->
@@ -49,7 +49,7 @@ Spec: docs/DEDRM_SCHEMES.md §2.3–2.5. Original: mobidedrm.py (parseDRM, proce
 <!-- SECTION:PLAN:BEGIN -->
 ## Plan (docs/DEDRM_SCHEMES.md §2.3–2.5; mobidedrm.py processBook/parseDRM)
 
-All logic lands in `crates/dedrm-schemes/src/mobipocket.rs`; PID helpers in `dedrm-keys::pid` already exist (`book_pid_from_serial`, `eink_pid_from_serial`). No new PID code expected.
+All logic lands in `crates/flamberge-schemes/src/mobipocket.rs`; PID helpers in `flamberge-keys::pid` already exist (`book_pid_from_serial`, `eink_pid_from_serial`). No new PID code expected.
 
 ### mobipocket::decrypt(input, keys)
 1. `detect()` gate: `PalmDb::parse` + BOOKMOBI/TEXtREAd magic → else `NotThisScheme` (let Topaz/KFX try).
@@ -82,7 +82,7 @@ All logic lands in `crates/dedrm-schemes/src/mobipocket.rs`; PID helpers in `ded
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Implemented the full Mobipocket decrypt path in `dedrm-schemes::mobipocket`, composing the task-1 MOBI header parser with `dedrm-crypto::pc1` and the existing `dedrm-keys::pid` helpers. No new PID code was needed — `book_pid_from_serial` / `eink_pid_from_serial` already covered `getKindlePids`.
+Implemented the full Mobipocket decrypt path in `flamberge-schemes::mobipocket`, composing the task-1 MOBI header parser with `flamberge-crypto::pc1` and the existing `flamberge-keys::pid` helpers. No new PID code was needed — `book_pid_from_serial` / `eink_pid_from_serial` already covered `getKindlePids`.
 
 **Flow (docs/DEDRM_SCHEMES.md §2.3–2.5):**
 - `detect()` gate returns `NotThisScheme` for non-Mobi PalmDBs so Topaz/KFX get a turn.

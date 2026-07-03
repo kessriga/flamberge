@@ -17,9 +17,9 @@ references:
   - ../../external/DeDRM_tools/DeDRM_plugin/kfxdedrm.py
   - ../../external/DeDRM_tools/DeDRM_plugin/ion.py
 modified_files:
-  - crates/dedrm-formats/src/kfx_zip.rs
-  - crates/dedrm-schemes/src/kfx.rs
-  - crates/dedrm-crypto/src/kdf.rs
+  - crates/flamberge-formats/src/kfx_zip.rs
+  - crates/flamberge-schemes/src/kfx.rs
+  - crates/flamberge-crypto/src/kdf.rs
 priority: medium
 ordinal: 7000
 ---
@@ -27,7 +27,7 @@ ordinal: 7000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Implement KFX-ZIP handling in dedrm-formats::kfx_zip (find DRMION + voucher members by magic, strip DRMION 8+8) and the decrypt path in dedrm-schemes::kfx using the ION parser (task-6) and crypto primitives.
+Implement KFX-ZIP handling in flamberge-formats::kfx_zip (find DRMION + voucher members by magic, strip DRMION 8+8) and the decrypt path in flamberge-schemes::kfx using the ION parser (task-6) and crypto primitives.
 
 Voucher key chain (§3.3): split each candidate PID into (dsn, secret) by trying the length splits; build `shared = "PIDv3"+encAlg+encTransform+hashAlg` + sorted lock_parameters applied with dsn/secret; `obfuscate(shared, version)` (port OBFUSCATION_TABLE byte-for-byte); `kek = HMAC_SHA256(sharedsecret, "PIDv3")`; AES-256-CBC decrypt + PKCS#7 unpad the voucher; extract the 16-byte content key from the KeySet/SecretKey (AES/RAW/encoded). Content (§3.4): AES-128-CBC per page with per-page IV + PKCS#7; decompress Compressed pages (1-byte 0x00 UseFilter then LZMA-alone). Repackage the zip with decrypted members. Add an `lzma` dependency (alone/legacy format). Spec: docs/DEDRM_SCHEMES.md §3. Original: kfxdedrm.py, ion.py (DrmIon, DrmIonVoucher).
 <!-- SECTION:DESCRIPTION:END -->

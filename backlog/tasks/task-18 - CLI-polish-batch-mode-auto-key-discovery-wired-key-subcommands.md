@@ -14,8 +14,8 @@ dependencies:
 references:
   - docs/DEDRM_SCHEMES.md
 modified_files:
-  - crates/dedrm-cli/src/main.rs
-  - crates/dedrm-schemes/src/lib.rs
+  - crates/flamberge-cli/src/main.rs
+  - crates/flamberge-schemes/src/lib.rs
 priority: low
 ordinal: 18000
 ---
@@ -23,7 +23,7 @@ ordinal: 18000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Round out the `dedrm` binary. Wire the `keys adobe`/`keys kindle`/`keys kobo` subcommands to the now-implemented extraction (tasks 15-17) instead of returning bail!. Add optional auto key-discovery to `decrypt` (a flag that pulls local Kindle/Adobe/Kobo keys into the KeyStore before trying). Add batch mode: accept a directory or multiple inputs and decrypt each, reporting a per-file summary. Improve dispatch so a non-matching scheme returns NotThisScheme (not a hard error) and the surfaced error is the most relevant one. Ensure no partial output files are left on failure.
+Round out the `flamberge` binary. Wire the `keys adobe`/`keys kindle`/`keys kobo` subcommands to the now-implemented extraction (tasks 15-17) instead of returning bail!. Add optional auto key-discovery to `decrypt` (a flag that pulls local Kindle/Adobe/Kobo keys into the KeyStore before trying). Add batch mode: accept a directory or multiple inputs and decrypt each, reporting a per-file summary. Improve dispatch so a non-matching scheme returns NotThisScheme (not a hard error) and the surfaced error is the most relevant one. Ensure no partial output files are left on failure.
 
 Depends on the key-extraction tasks for the subcommand wiring. Spec: docs/DEDRM_SCHEMES.md §0 (dispatch).
 <!-- SECTION:DESCRIPTION:END -->

@@ -29,7 +29,7 @@ Set up continuous integration and release. Add a CI workflow that runs `cargo bu
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 CI runs build + test + clippy(-D warnings) + fmt --check on Linux/macOS/Windows and is green on the current tree
-- [ ] #2 Tagged releases produce optimized per-platform `dedrm` binaries as downloadable artifacts
+- [ ] #2 Tagged releases produce optimized per-platform `flamberge` binaries as downloadable artifacts
 - [ ] #3 README documents install, usage, and a supported-scheme/platform matrix; a legal-use note is present
 - [ ] #4 License is set consistently across crates (workspace `license`) and a LICENSE file exists
 <!-- AC:END -->

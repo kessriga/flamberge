@@ -15,7 +15,7 @@ references:
   - docs/DEDRM_SCHEMES.md
   - ../../external/DeDRM_tools/DeDRM_plugin/topazextract.py
 modified_files:
-  - crates/dedrm-schemes/src/topaz.rs
+  - crates/flamberge-schemes/src/topaz.rs
 priority: medium
 ordinal: 5000
 ---
@@ -23,7 +23,7 @@ ordinal: 5000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Implement dedrm-schemes::topaz using the container parser (task-4) and the existing Topaz cipher (dedrm-crypto::topaz). Read the dkey record (unencrypted, zlib-inflate if compressed). For each candidate PID (8 bytes), Topaz-decrypt each dkey sub-record and validate the 24-byte `PID`..`pid` structure with matching embedded PID; the first valid sub-record yields the 8-byte book key. Then Topaz-decrypt every payload record flagged encrypted (negative index) and zlib-inflate compressed records, extracting the named files. Books with no dkey are treated as unencrypted.
+Implement flamberge-schemes::topaz using the container parser (task-4) and the existing Topaz cipher (flamberge-crypto::topaz). Read the dkey record (unencrypted, zlib-inflate if compressed). For each candidate PID (8 bytes), Topaz-decrypt each dkey sub-record and validate the 24-byte `PID`..`pid` structure with matching embedded PID; the first valid sub-record yields the 8-byte book key. Then Topaz-decrypt every payload record flagged encrypted (negative index) and zlib-inflate compressed records, extracting the named files. Books with no dkey are treated as unencrypted.
 
 Output: for a first cut, emit the extracted record set (or a repackaged container). Reconstructing readable HTML/SVG (genbook/flatxml2html) is out of scope for this task and should be tracked separately if desired. Spec: docs/DEDRM_SCHEMES.md §5.3–5.4. Original: topazextract.py (processBook, decryptDkeyRecords, decryptRecord).
 <!-- SECTION:DESCRIPTION:END -->

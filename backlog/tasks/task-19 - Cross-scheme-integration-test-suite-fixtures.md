@@ -19,7 +19,7 @@ ordinal: 19000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Build a workspace-level integration test suite (top-level `tests/`) that exercises each implemented scheme end-to-end through `dedrm_schemes::decrypt` (and/or the CLI binary), plus a shared fixtures module for synthesizing small encrypted books per scheme (constructed by the project's own crypto, with provenance documented). Each scheme adds its case as it lands; this task establishes the harness and the fixture helpers, and backfills cases for already-implemented schemes. Include negative tests (wrong key → clean failure) and a golden-output check where practical.
+Build a workspace-level integration test suite (top-level `tests/`) that exercises each implemented scheme end-to-end through `flamberge_schemes::decrypt` (and/or the CLI binary), plus a shared fixtures module for synthesizing small encrypted books per scheme (constructed by the project's own crypto, with provenance documented). Each scheme adds its case as it lands; this task establishes the harness and the fixture helpers, and backfills cases for already-implemented schemes. Include negative tests (wrong key → clean failure) and a golden-output check where practical.
 
 Note: real DRMed books cannot be committed; fixtures are synthesized. Depends conceptually on scheme tasks but the harness can be built first and grown.
 <!-- SECTION:DESCRIPTION:END -->

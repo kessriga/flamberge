@@ -13,7 +13,7 @@ references:
   - docs/DEDRM_SCHEMES.md
   - ../../external/DeDRM_tools/Obok_plugin/obok/obok.py
 modified_files:
-  - crates/dedrm-keys/src/kobo.rs
+  - crates/flamberge-keys/src/kobo.rs
 priority: low
 ordinal: 17000
 ---
@@ -21,7 +21,7 @@ ordinal: 17000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Implement dedrm-keys::kobo::discover_userkeys: locate the Kobo library DB (device `.kobo/KoboReader.sqlite` or desktop `Kobo.sqlite` per-OS), read `UserID`s from the `user` table, enumerate host MAC addresses and the device serial (from `.adobe-digital-editions/device.xml`), then feed them into the already-implemented derive_userkeys to produce candidate 16-byte keys. Handle the SQLite WAL header workaround. Return keys into KeyStore.kobo_keys. Spec: docs/DEDRM_SCHEMES.md §9.1–9.2. Original: obok.py (KoboLibrary).
+Implement flamberge-keys::kobo::discover_userkeys: locate the Kobo library DB (device `.kobo/KoboReader.sqlite` or desktop `Kobo.sqlite` per-OS), read `UserID`s from the `user` table, enumerate host MAC addresses and the device serial (from `.adobe-digital-editions/device.xml`), then feed them into the already-implemented derive_userkeys to produce candidate 16-byte keys. Handle the SQLite WAL header workaround. Return keys into KeyStore.kobo_keys. Spec: docs/DEDRM_SCHEMES.md §9.1–9.2. Original: obok.py (KoboLibrary).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

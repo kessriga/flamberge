@@ -13,8 +13,8 @@ references:
   - docs/DEDRM_SCHEMES.md
   - ../../external/DeDRM_tools/Obok_plugin/obok/obok.py
 modified_files:
-  - crates/dedrm-schemes/src/kobo.rs
-  - crates/dedrm-keys/src/kobo.rs
+  - crates/flamberge-schemes/src/kobo.rs
+  - crates/flamberge-keys/src/kobo.rs
 priority: low
 ordinal: 14000
 ---
@@ -22,7 +22,7 @@ ordinal: 14000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Implement dedrm-schemes::kobo. Read per-file page keys from the Kobo SQLite DB (`content_keys`/`content`: elementid = zip path, elementkey = base64 AES-wrapped page key) — add a `rusqlite` (bundled) dependency. Decrypt with the two-layer AES-128-ECB (§9.3): page_key = AES-ECB-decrypt(user_key, base64decode(elementkey)); plaintext = AES-ECB-decrypt(page_key, contents); then strip CMS/PKCS#7 padding. Candidate user keys come from dedrm-keys::kobo::derive_userkeys. Use `check()`-style content validation (xhtml printable-ASCII after BOM; jpeg FF D8 FF) to select the right key by trial, then repackage the KEPUB as an EPUB (deflated). Handle the WAL header patch (bytes 18-19 -> 01 01) when opening the DB copy. Original: obok.py.
+Implement flamberge-schemes::kobo. Read per-file page keys from the Kobo SQLite DB (`content_keys`/`content`: elementid = zip path, elementkey = base64 AES-wrapped page key) — add a `rusqlite` (bundled) dependency. Decrypt with the two-layer AES-128-ECB (§9.3): page_key = AES-ECB-decrypt(user_key, base64decode(elementkey)); plaintext = AES-ECB-decrypt(page_key, contents); then strip CMS/PKCS#7 padding. Candidate user keys come from flamberge-keys::kobo::derive_userkeys. Use `check()`-style content validation (xhtml printable-ASCII after BOM; jpeg FF D8 FF) to select the right key by trial, then repackage the KEPUB as an EPUB (deflated). Handle the WAL header patch (bytes 18-19 -> 01 01) when opening the DB copy. Original: obok.py.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

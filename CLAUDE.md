@@ -1,4 +1,4 @@
-# dedrm — Project Guide
+# flamberge — Project Guide
 
 Standalone Rust CLI that reimplements the **DeDRM_tools** Calibre plugins (ebook DRM removal).
 
@@ -12,17 +12,17 @@ Standalone Rust CLI that reimplements the **DeDRM_tools** Calibre plugins (ebook
 - Feature work goes on a branch off `main` (currently `feat/rust-port`).
 
 ## Layout & commands
-- Cargo workspace under `crates/`; dependency direction: `dedrm-crypto` ← `dedrm-formats`, `dedrm-keys` ← `dedrm-schemes` ← `dedrm-cli` (binary name `dedrm`).
+- Cargo workspace under `crates/`; dependency direction: `flamberge-crypto` ← `flamberge-formats`, `flamberge-keys` ← `flamberge-schemes` ← `flamberge-cli` (binary name `flamberge`).
 - `cargo build` / `cargo test` from repo root. Unit tests are colocated in each module; every cipher has a round-trip test.
 - Errors: `thiserror` in libs, `anyhow` in the CLI. Never `panic!`/`unwrap` on a real code path.
 
 ## Status (what's real vs stub)
-- **Real + tested:** all of `dedrm-crypto` (PC1, Topaz, AES CBC/ECB/CTR, DES, RC4, CRC-32, PBKDF2, PKCS#7); `dedrm-formats::palmdb`; `dedrm-keys` offline generators (`pid`, `ignoble`, `ereader`, `kobo::derive_userkeys`).
-- **Stubbed** (return `Unimplemented`, doc-comment points at a spec §): all `dedrm-schemes` decrypt bodies, the other `dedrm-formats` containers, and platform key-extraction (`kindle`, `adobe`, `kobo::discover_userkeys`).
+- **Real + tested:** all of `flamberge-crypto` (PC1, Topaz, AES CBC/ECB/CTR, DES, RC4, CRC-32, PBKDF2, PKCS#7); `flamberge-formats::palmdb`; `flamberge-keys` offline generators (`pid`, `ignoble`, `ereader`, `kobo::derive_userkeys`).
+- **Stubbed** (return `Unimplemented`, doc-comment points at a spec §): all `flamberge-schemes` decrypt bodies, the other `flamberge-formats` containers, and platform key-extraction (`kindle`, `adobe`, `kobo::discover_userkeys`).
 - **Next vertical slice:** Mobipocket (§2) — PalmDB + PC1 are already available, only record/voucher logic remains.
 
 ## Implementation gotchas (from the analysis)
-- PC1 and Topaz require **wrapping u32 arithmetic** — the tested ports live in `dedrm-crypto`; reuse them, don't reinvent.
+- PC1 and Topaz require **wrapping u32 arithmetic** — the tested ports live in `flamberge-crypto`; reuse them, don't reinvent.
 - ADEPT/B&N book keys are the **last 16 bytes** after PKCS#7 strip, not the first.
 - ADEPT/B&N EPUB per-file decrypt **drops the first 16 bytes** (prepended IV block) before unpad + raw-inflate (windowBits −15).
 - Topaz "encrypted" flag = the **sign of the record index** (negative), not a header field.

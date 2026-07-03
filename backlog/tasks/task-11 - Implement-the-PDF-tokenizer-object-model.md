@@ -15,7 +15,7 @@ references:
   - docs/DEDRM_SCHEMES.md
   - ../../external/DeDRM_tools/DeDRM_plugin/ineptpdf.py
 modified_files:
-  - crates/dedrm-formats/src/pdf.rs
+  - crates/flamberge-formats/src/pdf.rs
 priority: low
 ordinal: 11000
 ---
@@ -23,7 +23,7 @@ ordinal: 11000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Implement dedrm-formats::pdf: a pdfminer-style tokenizer and object model sufficient for ADEPT/B&N decryption and clean re-serialization. Cover the lexer (names, numbers, strings incl. escapes, hex strings, arrays, dicts, streams), the object graph with indirect references, classic `xref` tables and PDF-1.5 cross-reference streams, object streams (ObjStm), and stream filters FlateDecode/LZWDecode/ASCII85Decode with the PNG-up predictor (12). Expose the `/Encrypt` dict and `/ID`. Provide a serializer that writes a decrypted PDF (forcing gen 0, dropping `/Encrypt`).
+Implement flamberge-formats::pdf: a pdfminer-style tokenizer and object model sufficient for ADEPT/B&N decryption and clean re-serialization. Cover the lexer (names, numbers, strings incl. escapes, hex strings, arrays, dicts, streams), the object graph with indirect references, classic `xref` tables and PDF-1.5 cross-reference streams, object streams (ObjStm), and stream filters FlateDecode/LZWDecode/ASCII85Decode with the PNG-up predictor (12). Expose the `/Encrypt` dict and `/ID`. Provide a serializer that writes a decrypted PDF (forcing gen 0, dropping `/Encrypt`).
 
 This is a large module; keep decryption out of scope (task-12). Port incrementally but land a working parse+reserialize of unencrypted PDFs first. Spec: docs/DEDRM_SCHEMES.md §7.4. Original: ineptpdf.py.
 <!-- SECTION:DESCRIPTION:END -->
