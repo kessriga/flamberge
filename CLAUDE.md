@@ -6,6 +6,11 @@ Standalone Rust CLI that reimplements the **DeDRM_tools** Calibre plugins (ebook
 - `docs/DEDRM_SCHEMES.md` — **the spec.** Byte-level reference for every scheme (offsets, constants, key derivation). **Read the relevant section before implementing any scheme.** Sections: §1 crypto, §2 Mobipocket, §3 KFX/ION, §4 B&N, §5 Topaz, §6 Kindle keys, §7 Adobe ADEPT, §8 eReader, §9 Kobo, §10 Rust guidance.
 - `../../external/DeDRM_tools/DeDRM_plugin/` — the original Python source the spec was derived from; consult it when the spec is ambiguous.
 
+## Working conventions
+- Tasks live in **Backlog.md** (`backlog/tasks/`), not a Clavix `tasks.md`. Per task: mark In Progress, record a plan in the task, implement with tests, verify build/test/clippy, mark Done with a final summary.
+- **Commits: atomic and reasonably short** — one logical change per commit, your judgment on boundaries. Keep unrelated cleanups (e.g. lint fixes) in their own commits.
+- Feature work goes on a branch off `main` (currently `feat/rust-port`).
+
 ## Layout & commands
 - Cargo workspace under `crates/`; dependency direction: `dedrm-crypto` ← `dedrm-formats`, `dedrm-keys` ← `dedrm-schemes` ← `dedrm-cli` (binary name `dedrm`).
 - `cargo build` / `cargo test` from repo root. Unit tests are colocated in each module; every cipher has a round-trip test.
