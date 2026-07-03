@@ -13,8 +13,8 @@ pub mod kobo;
 pub mod mobipocket;
 pub mod topaz;
 
-pub use flamberge_keys::KeyStore;
 pub use error::SchemeError;
+pub use flamberge_keys::KeyStore;
 
 pub type Result<T> = std::result::Result<T, SchemeError>;
 

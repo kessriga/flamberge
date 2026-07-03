@@ -11,7 +11,10 @@ use cipher::{BlockDecryptMut, KeyInit, KeyIvInit};
 /// DES-ECB decrypt, no padding. `data` must be a multiple of 8 bytes.
 pub fn ecb_decrypt(key: &[u8], data: &[u8]) -> Result<Vec<u8>> {
     ecb::Decryptor::<des::Des>::new_from_slice(key)
-        .map_err(|_| CryptoError::KeyLength { expected: 8, got: key.len() })?
+        .map_err(|_| CryptoError::KeyLength {
+            expected: 8,
+            got: key.len(),
+        })?
         .decrypt_padded_vec_mut::<NoPadding>(data)
         .map_err(|_| CryptoError::NotBlockAligned(data.len(), 8))
 }
@@ -19,7 +22,10 @@ pub fn ecb_decrypt(key: &[u8], data: &[u8]) -> Result<Vec<u8>> {
 /// DES-CBC decrypt, no padding.
 pub fn cbc_decrypt(key: &[u8], iv: &[u8], data: &[u8]) -> Result<Vec<u8>> {
     cbc::Decryptor::<des::Des>::new_from_slices(key, iv)
-        .map_err(|_| CryptoError::IvLength { expected: 8, got: iv.len() })?
+        .map_err(|_| CryptoError::IvLength {
+            expected: 8,
+            got: iv.len(),
+        })?
         .decrypt_padded_vec_mut::<NoPadding>(data)
         .map_err(|_| CryptoError::NotBlockAligned(data.len(), 8))
 }
@@ -30,8 +36,15 @@ pub fn cbc_decrypt(key: &[u8], iv: &[u8], data: &[u8]) -> Result<Vec<u8>> {
 pub fn fix_key(key: &[u8]) -> Vec<u8> {
     key.iter()
         .map(|&b| {
-            let fold = b ^ (b << 1) ^ (b << 2) ^ (b << 3) ^ (b << 4) ^ (b << 5) ^ (b << 6)
-                ^ (b << 7) ^ 0x80;
+            let fold = b
+                ^ (b << 1)
+                ^ (b << 2)
+                ^ (b << 3)
+                ^ (b << 4)
+                ^ (b << 5)
+                ^ (b << 6)
+                ^ (b << 7)
+                ^ 0x80;
             b ^ (fold & 0x80)
         })
         .collect()

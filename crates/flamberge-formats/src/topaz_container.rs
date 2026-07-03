@@ -41,5 +41,7 @@ impl TopazContainer {
 /// leading `0xFF` negative marker). Returns `(value, bytes_consumed)`.
 /// Reference: `docs/DEDRM_SCHEMES.md` §5.1.  **STUB.**
 pub fn read_encoded_number(_data: &[u8]) -> Result<(i64, usize)> {
-    Err(FormatError::Unimplemented("topaz_container::read_encoded_number"))
+    Err(FormatError::Unimplemented(
+        "topaz_container::read_encoded_number",
+    ))
 }

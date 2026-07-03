@@ -14,7 +14,14 @@ pub fn user_key(name: &str, cc: &str) -> [u8; 8] {
         .filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
         .collect();
     let cc: String = cc.chars().filter(|&c| c != ' ').collect();
-    let cc8: String = cc.chars().rev().take(8).collect::<Vec<_>>().into_iter().rev().collect();
+    let cc8: String = cc
+        .chars()
+        .rev()
+        .take(8)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
 
     let name_crc = crc32::ieee(newname.as_bytes());
     let cc_crc = crc32::ieee(cc8.as_bytes());

@@ -98,7 +98,9 @@ fn scan_vouchers(
         }
         let cookie = pc1::decrypt(temp_key, &entry[16..48])?;
         // '>LL16sLL': ver, flags, finalkey(16), expiry, expiry2.
-        let Some(ver) = be_u32(&cookie, 0) else { continue };
+        let Some(ver) = be_u32(&cookie, 0) else {
+            continue;
+        };
         let Some(flags) = be_u32(&cookie, 4) else {
             continue;
         };
@@ -134,7 +136,11 @@ fn normalize_pids(header: &MobiHeader, keys: &KeyStore) -> Vec<String> {
     let (rec209, token) = header.pid_meta();
     let mut raw: Vec<String> = keys.pids.clone();
     for serial in &keys.serials {
-        raw.push(pid::book_pid_from_serial(serial.as_bytes(), &rec209, &token));
+        raw.push(pid::book_pid_from_serial(
+            serial.as_bytes(),
+            &rec209,
+            &token,
+        ));
         raw.push(pid::eink_pid_from_serial(serial));
     }
 
@@ -170,9 +176,7 @@ pub fn decrypt(input: &[u8], keys: &KeyStore) -> Result<DecryptedBook> {
 
     let db = PalmDb::parse(input)?;
     let header = MobiHeader::from_image(input)?;
-    let (rec0_start, _) = db
-        .record_range(0)
-        .ok_or(SchemeError::NotThisScheme)?;
+    let (rec0_start, _) = db.record_range(0).ok_or(SchemeError::NotThisScheme)?;
 
     // Recover the display title for output naming (§2.6). record 0 slice plus the
     // 32-byte PalmDB name at the head of the file.
@@ -204,9 +208,7 @@ pub fn decrypt(input: &[u8], keys: &KeyStore) -> Result<DecryptedBook> {
     }
 
     // Record 0 within the file image, used for type-1 book-key extraction.
-    let record0 = db
-        .record(input, 0)
-        .ok_or(SchemeError::NotThisScheme)?;
+    let record0 = db.record(input, 0).ok_or(SchemeError::NotThisScheme)?;
 
     let found_key: [u8; 16] = if header.encryption_type == 1 {
         // §2.3 type 1: fixed key vector over the stored book key.
@@ -215,12 +217,11 @@ pub fn decrypt(input: &[u8], keys: &KeyStore) -> Result<DecryptedBook> {
         } else {
             header.mobi_length as usize + 16
         };
-        let bookkey_data = record0
-            .get(off..off + 16)
-            .ok_or_else(|| SchemeError::Format(flamberge_formats::FormatError::Truncated(off + 16)))?;
+        let bookkey_data = record0.get(off..off + 16).ok_or_else(|| {
+            SchemeError::Format(flamberge_formats::FormatError::Truncated(off + 16))
+        })?;
         let key = pc1::decrypt(T1_KEYVEC, bookkey_data)?;
-        key.try_into()
-            .map_err(|_| SchemeError::NoKeyWorked)?
+        key.try_into().map_err(|_| SchemeError::NoKeyWorked)?
     } else {
         // §2.3 type 2: voucher matching over candidate PIDs.
         if header.drm.count == 0 {
@@ -228,9 +229,9 @@ pub fn decrypt(input: &[u8], keys: &KeyStore) -> Result<DecryptedBook> {
         }
         let ptr = header.drm.ptr as usize;
         let size = header.drm.size as usize;
-        let vouchers = record0
-            .get(ptr..ptr + size)
-            .ok_or_else(|| SchemeError::Format(flamberge_formats::FormatError::Truncated(ptr + size)))?;
+        let vouchers = record0.get(ptr..ptr + size).ok_or_else(|| {
+            SchemeError::Format(flamberge_formats::FormatError::Truncated(ptr + size))
+        })?;
         let goodpids = normalize_pids(&header, keys);
         find_book_key(vouchers, header.drm.count as usize, &goodpids)?
             .ok_or(SchemeError::NoKeyWorked)?
@@ -417,7 +418,10 @@ mod tests {
         image[HEADER + 8..HEADER + 12].copy_from_slice(&(rec1_off as u32).to_be_bytes());
         image[rec0_off..rec1_off].copy_from_slice(rec0_body);
         image[rec1_off..].copy_from_slice(rec1);
-        SynthMobi { image, rec1_start: rec1_off }
+        SynthMobi {
+            image,
+            rec1_start: rec1_off,
+        }
     }
 
     /// Record-0 image with a MOBI header (version 6, mobi_length 0xE4), no EXTH.
@@ -457,7 +461,10 @@ mod tests {
         let rec1 = pc1::encrypt(&finalkey, plaintext).unwrap();
         let synth = assemble(&rec0, &rec1);
 
-        let keys = KeyStore { pids: vec![pid.to_string()], ..KeyStore::default() };
+        let keys = KeyStore {
+            pids: vec![pid.to_string()],
+            ..KeyStore::default()
+        };
         let book = decrypt(&synth.image, &keys).unwrap();
         assert_eq!(book.extension, "mobi");
         assert_eq!(&book.data[synth.rec1_start..], plaintext);
@@ -540,8 +547,11 @@ mod tests {
 
     #[test]
     fn non_mobi_falls_through() {
-        let err = decrypt(b"not a palm database at all............", &KeyStore::default())
-            .unwrap_err();
+        let err = decrypt(
+            b"not a palm database at all............",
+            &KeyStore::default(),
+        )
+        .unwrap_err();
         assert!(matches!(err, SchemeError::NotThisScheme));
     }
 

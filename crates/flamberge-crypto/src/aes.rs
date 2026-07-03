@@ -11,7 +11,10 @@ use cipher::{BlockDecryptMut, BlockEncryptMut, KeyInit, KeyIvInit, StreamCipher}
 macro_rules! cbc_decrypt_arm {
     ($alg:ty, $key:expr, $iv:expr, $data:expr) => {
         cbc::Decryptor::<$alg>::new_from_slices($key, $iv)
-            .map_err(|_| CryptoError::IvLength { expected: 16, got: $iv.len() })?
+            .map_err(|_| CryptoError::IvLength {
+                expected: 16,
+                got: $iv.len(),
+            })?
             .decrypt_padded_vec_mut::<NoPadding>($data)
             .map_err(|_| CryptoError::NotBlockAligned($data.len(), 16))
     };
@@ -20,7 +23,10 @@ macro_rules! cbc_decrypt_arm {
 macro_rules! cbc_encrypt_arm {
     ($alg:ty, $key:expr, $iv:expr, $data:expr) => {
         Ok(cbc::Encryptor::<$alg>::new_from_slices($key, $iv)
-            .map_err(|_| CryptoError::IvLength { expected: 16, got: $iv.len() })?
+            .map_err(|_| CryptoError::IvLength {
+                expected: 16,
+                got: $iv.len(),
+            })?
             .encrypt_padded_vec_mut::<NoPadding>($data))
     };
 }
@@ -28,7 +34,10 @@ macro_rules! cbc_encrypt_arm {
 macro_rules! ecb_decrypt_arm {
     ($alg:ty, $key:expr, $data:expr) => {
         ecb::Decryptor::<$alg>::new_from_slice($key)
-            .map_err(|_| CryptoError::KeyLength { expected: 16, got: $key.len() })?
+            .map_err(|_| CryptoError::KeyLength {
+                expected: 16,
+                got: $key.len(),
+            })?
             .decrypt_padded_vec_mut::<NoPadding>($data)
             .map_err(|_| CryptoError::NotBlockAligned($data.len(), 16))
     };
@@ -36,8 +45,12 @@ macro_rules! ecb_decrypt_arm {
 
 macro_rules! ctr_arm {
     ($alg:ty, $key:expr, $iv:expr, $data:expr) => {{
-        let mut cipher = ctr::Ctr128BE::<$alg>::new_from_slices($key, $iv)
-            .map_err(|_| CryptoError::IvLength { expected: 16, got: $iv.len() })?;
+        let mut cipher = ctr::Ctr128BE::<$alg>::new_from_slices($key, $iv).map_err(|_| {
+            CryptoError::IvLength {
+                expected: 16,
+                got: $iv.len(),
+            }
+        })?;
         let mut buf = $data.to_vec();
         cipher.apply_keystream(&mut buf);
         Ok(buf)
@@ -50,7 +63,10 @@ pub fn cbc_decrypt(key: &[u8], iv: &[u8], data: &[u8]) -> Result<Vec<u8>> {
         16 => cbc_decrypt_arm!(aes::Aes128, key, iv, data),
         24 => cbc_decrypt_arm!(aes::Aes192, key, iv, data),
         32 => cbc_decrypt_arm!(aes::Aes256, key, iv, data),
-        n => Err(CryptoError::KeyLength { expected: 16, got: n }),
+        n => Err(CryptoError::KeyLength {
+            expected: 16,
+            got: n,
+        }),
     }
 }
 
@@ -60,7 +76,10 @@ pub fn cbc_encrypt(key: &[u8], iv: &[u8], data: &[u8]) -> Result<Vec<u8>> {
         16 => cbc_encrypt_arm!(aes::Aes128, key, iv, data),
         24 => cbc_encrypt_arm!(aes::Aes192, key, iv, data),
         32 => cbc_encrypt_arm!(aes::Aes256, key, iv, data),
-        n => Err(CryptoError::KeyLength { expected: 16, got: n }),
+        n => Err(CryptoError::KeyLength {
+            expected: 16,
+            got: n,
+        }),
     }
 }
 
@@ -70,7 +89,10 @@ pub fn ecb_decrypt(key: &[u8], data: &[u8]) -> Result<Vec<u8>> {
         16 => ecb_decrypt_arm!(aes::Aes128, key, data),
         24 => ecb_decrypt_arm!(aes::Aes192, key, data),
         32 => ecb_decrypt_arm!(aes::Aes256, key, data),
-        n => Err(CryptoError::KeyLength { expected: 16, got: n }),
+        n => Err(CryptoError::KeyLength {
+            expected: 16,
+            got: n,
+        }),
     }
 }
 
@@ -83,7 +105,10 @@ pub fn ctr_apply(key: &[u8], iv: &[u8], data: &[u8]) -> Result<Vec<u8>> {
         16 => ctr_arm!(aes::Aes128, key, iv, data),
         24 => ctr_arm!(aes::Aes192, key, iv, data),
         32 => ctr_arm!(aes::Aes256, key, iv, data),
-        n => Err(CryptoError::KeyLength { expected: 16, got: n }),
+        n => Err(CryptoError::KeyLength {
+            expected: 16,
+            got: n,
+        }),
     }
 }
 

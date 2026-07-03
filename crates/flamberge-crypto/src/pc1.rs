@@ -27,7 +27,10 @@ pub fn encrypt(key: &[u8], src: &[u8]) -> Result<Vec<u8>> {
 
 fn pc1(key: &[u8], src: &[u8], decryption: bool) -> Result<Vec<u8>> {
     if key.len() != KEY_LEN {
-        return Err(CryptoError::KeyLength { expected: KEY_LEN, got: key.len() });
+        return Err(CryptoError::KeyLength {
+            expected: KEY_LEN,
+            got: key.len(),
+        });
     }
 
     // Eight big-endian 16-bit words; this array is the evolving cipher state.
@@ -47,7 +50,9 @@ fn pc1(key: &[u8], src: &[u8], decryption: bool) -> Result<Vec<u8>> {
         for j in 0..8u16 {
             temp1 ^= wkey[j as usize];
             // Compute wide, then mask to 16 bits at the same points as the reference.
-            let sum2_tmp = (sum2 as u32).wrapping_add(j as u32).wrapping_mul(20021)
+            let sum2_tmp = (sum2 as u32)
+                .wrapping_add(j as u32)
+                .wrapping_mul(20021)
                 .wrapping_add(sum1 as u32);
             // temp1/sum1 are u16, so wrapping arithmetic already masks to 16 bits.
             sum1 = temp1.wrapping_mul(346);

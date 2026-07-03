@@ -88,8 +88,8 @@ fn main() -> Result<()> {
 }
 
 fn run_decrypt(args: DecryptArgs) -> Result<()> {
-    let data = std::fs::read(&args.input)
-        .with_context(|| format!("reading {}", args.input.display()))?;
+    let data =
+        std::fs::read(&args.input).with_context(|| format!("reading {}", args.input.display()))?;
     let ext = args
         .input
         .extension()
@@ -101,9 +101,8 @@ fn run_decrypt(args: DecryptArgs) -> Result<()> {
     keys.serials = args.serial;
     keys.bandn_keys = args.bandn_key;
     for path in &args.adept_key {
-        keys.adept_keys.push(
-            std::fs::read(path).with_context(|| format!("reading {}", path.display()))?,
-        );
+        keys.adept_keys
+            .push(std::fs::read(path).with_context(|| format!("reading {}", path.display()))?);
     }
     for hexkey in &args.ereader_key {
         let bytes = hex::decode(hexkey).context("eReader key must be hex")?;
@@ -168,7 +167,9 @@ fn is_asin(stem: &str) -> bool {
     let bytes = core.as_bytes();
     bytes.len() == 10
         && bytes[0] == b'B'
-        && bytes[1..].iter().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+        && bytes[1..]
+            .iter()
+            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
 }
 
 fn is_uuid(stem: &str) -> bool {
@@ -245,7 +246,9 @@ mod tests {
         assert!(is_amazon_download_name("B0011AB2CD_EBSP"));
         assert!(is_amazon_download_name("B0011AB2CD_sample"));
         // 36-char UUID-style download name.
-        assert!(is_amazon_download_name("0123456789ABCDEF0123456789ABCDEF-012"));
+        assert!(is_amazon_download_name(
+            "0123456789ABCDEF0123456789ABCDEF-012"
+        ));
         // Ordinary, human-readable stems are left alone.
         assert!(!is_amazon_download_name("My Great Book"));
         assert!(!is_amazon_download_name("B00ABCDEF")); // too short

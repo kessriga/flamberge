@@ -197,12 +197,8 @@ impl MobiHeader {
         let mut token = Vec::new();
         let mut i = 0;
         while i + 5 <= rec209.len() {
-            let key = u32::from_be_bytes([
-                rec209[i + 1],
-                rec209[i + 2],
-                rec209[i + 3],
-                rec209[i + 4],
-            ]);
+            let key =
+                u32::from_be_bytes([rec209[i + 1], rec209[i + 2], rec209[i + 3], rec209[i + 4]]);
             if let Some(value) = self.exth.get(&key) {
                 token.extend_from_slice(value);
             }
@@ -279,7 +275,7 @@ mod tests {
         r[0x1C..0x20].copy_from_slice(&65001u32.to_be_bytes()); // codepage
         r[0x68..0x6C].copy_from_slice(&mobi_version.to_be_bytes());
         r[0x80..0x84].copy_from_slice(&0x40u32.to_be_bytes()); // EXTH present
-        // DRM block at 0xA8.
+                                                               // DRM block at 0xA8.
         r[0xA8..0xAC].copy_from_slice(&0x0400u32.to_be_bytes()); // ptr
         r[0xAC..0xB0].copy_from_slice(&1u32.to_be_bytes()); // count
         r[0xB0..0xB4].copy_from_slice(&0x30u32.to_be_bytes()); // size
@@ -294,11 +290,7 @@ mod tests {
         // rec209 references EXTH record 300; token should be that record's bytes.
         let mut rec209 = vec![0u8]; // tag byte
         rec209.extend_from_slice(&300u32.to_be_bytes());
-        let exth = build_exth(&[
-            (209, &rec209),
-            (300, b"TOKEN"),
-            (503, b"Title"),
-        ]);
+        let exth = build_exth(&[(209, &rec209), (300, b"TOKEN"), (503, b"Title")]);
         let record0 = build_record0(2, 6, &exth);
 
         let h = MobiHeader::parse(&record0, b"BOOKMOBI").unwrap();
@@ -312,11 +304,19 @@ mod tests {
         assert_eq!(h.exth_flag & 0x40, 0x40);
         assert_eq!(
             h.drm,
-            DrmBlock { ptr: 0x0400, count: 1, size: 0x30, flags: 0 }
+            DrmBlock {
+                ptr: 0x0400,
+                count: 1,
+                size: 0x30,
+                flags: 0
+            }
         );
         // PalmDoc compression => low bit of extra_data_flags cleared (3 -> 2).
         assert_eq!(h.extra_data_flags, 0x0002);
-        assert_eq!(h.exth.get(&503).map(|v| v.as_slice()), Some(b"Title".as_slice()));
+        assert_eq!(
+            h.exth.get(&503).map(|v| v.as_slice()),
+            Some(b"Title".as_slice())
+        );
 
         let (rec, token) = h.pid_meta();
         assert_eq!(rec, rec209);

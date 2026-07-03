@@ -62,12 +62,22 @@ impl PalmDb {
             let base = HEADER_LEN + i * RECORD_ENTRY_LEN;
             let offset = u32::from_be_bytes(data[base..base + 4].try_into().unwrap());
             let attributes = data[base + 4];
-            let unique_id =
-                (data[base + 5] as u32) << 16 | (data[base + 6] as u32) << 8 | data[base + 7] as u32;
-            records.push(RecordInfo { offset, attributes, unique_id });
+            let unique_id = (data[base + 5] as u32) << 16
+                | (data[base + 6] as u32) << 8
+                | data[base + 7] as u32;
+            records.push(RecordInfo {
+                offset,
+                attributes,
+                unique_id,
+            });
         }
 
-        Ok(PalmDb { name, type_creator, records, total_len: data.len() })
+        Ok(PalmDb {
+            name,
+            type_creator,
+            records,
+            total_len: data.len(),
+        })
     }
 
     /// Byte range `[start, end)` of record `index` within the file image.

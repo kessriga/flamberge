@@ -144,11 +144,17 @@ fn decrypts_with_correct_pid_and_names_by_title() {
         .arg(PID)
         .status()
         .unwrap();
-    assert!(status.success(), "decrypt should succeed with the right PID");
+    assert!(
+        status.success(),
+        "decrypt should succeed with the right PID"
+    );
 
     // AC#1/#2: DRM-free file with the correct extension and title-based name.
     let expected = dir.join("B00TESTPI0_Hello Title_nodrm.mobi");
-    assert!(expected.exists(), "expected output {expected:?} was not written");
+    assert!(
+        expected.exists(),
+        "expected output {expected:?} was not written"
+    );
 
     // AC#3: the decrypted text record equals the known plaintext.
     let out = std::fs::read(&expected).unwrap();
@@ -180,7 +186,10 @@ fn wrong_pid_fails_cleanly_without_writing_output() {
         "stderr should explain that no key worked, got: {stderr}"
     );
     let would_be = dir.join("B00TESTPI0_Hello Title_nodrm.mobi");
-    assert!(!would_be.exists(), "no output file should be written on failure");
+    assert!(
+        !would_be.exists(),
+        "no output file should be written on failure"
+    );
 
     let _ = std::fs::remove_dir_all(&dir);
 }
