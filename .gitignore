@@ -1,0 +1,9 @@
+# Track Serena configuration but ignore everything else
+.serena/*
+!.serena/project.yml
+
+# Ignore Rumdl cache
+.rumdl_cache
+
+# Ignore Rust output
+target
