@@ -3,12 +3,14 @@ name: Claude Code Review
 on:
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened]
-    # Optional: Only run on specific file changes
-    # paths:
-    #   - "src/**/*.ts"
-    #   - "src/**/*.tsx"
-    #   - "src/**/*.js"
-    #   - "src/**/*.jsx"
+    # Skip review when a PR touches only docs/backlog/metadata (saves API credits).
+    # A PR is reviewed as long as at least one changed file is NOT listed here.
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'backlog/**'
+      - 'LICENSE'
+      - '.gitignore'
 
 jobs:
   claude-review:
@@ -21,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: write
       issues: read
       id-token: write
 
