@@ -9,6 +9,7 @@
 pub mod error;
 pub mod ion;
 pub mod kfx_zip;
+pub mod mobi;
 pub mod ocf;
 pub mod palmdb;
 pub mod pdf;
