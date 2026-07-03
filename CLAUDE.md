@@ -10,6 +10,8 @@ Standalone Rust CLI that reimplements the **DeDRM_tools** Calibre plugins (ebook
 - Tasks live in **Backlog.md** (`backlog/tasks/`), not a Clavix `tasks.md`. Per task: mark In Progress, record a plan in the task, implement with tests, verify build/test/clippy/fmt, mark Done with a final summary.
 - **Commits: atomic and reasonably short** — one logical change per commit, your judgment on boundaries. Keep unrelated cleanups (e.g. lint fixes) in their own commits.
 - **One branch per task**, cut from `main` (e.g. `feat/task-4-topaz`); never commit to `main` directly. `main` is protected — integrate via PR only, with CI green and commits signed. Commit signing (SSH) is configured globally, so commits sign automatically.
+  - **Before starting a task:** switch to `main`, pull, then create and switch to the task branch.
+  - **After the task is done, before opening the PR:** pull `main` and rebase the task branch onto it.
 
 ## Layout & commands
 - Cargo workspace under `crates/`; dependency direction: `flamberge-crypto` ← `flamberge-formats`, `flamberge-keys` ← `flamberge-schemes` ← `flamberge-cli` (binary name `flamberge`).
