@@ -1,3 +1,31 @@
+# dedrm — Project Guide
+
+Standalone Rust CLI that reimplements the **DeDRM_tools** Calibre plugins (ebook DRM removal).
+
+## Sources of truth
+- `docs/DEDRM_SCHEMES.md` — **the spec.** Byte-level reference for every scheme (offsets, constants, key derivation). **Read the relevant section before implementing any scheme.** Sections: §1 crypto, §2 Mobipocket, §3 KFX/ION, §4 B&N, §5 Topaz, §6 Kindle keys, §7 Adobe ADEPT, §8 eReader, §9 Kobo, §10 Rust guidance.
+- `../../external/DeDRM_tools/DeDRM_plugin/` — the original Python source the spec was derived from; consult it when the spec is ambiguous.
+
+## Layout & commands
+- Cargo workspace under `crates/`; dependency direction: `dedrm-crypto` ← `dedrm-formats`, `dedrm-keys` ← `dedrm-schemes` ← `dedrm-cli` (binary name `dedrm`).
+- `cargo build` / `cargo test` from repo root. Unit tests are colocated in each module; every cipher has a round-trip test.
+- Errors: `thiserror` in libs, `anyhow` in the CLI. Never `panic!`/`unwrap` on a real code path.
+
+## Status (what's real vs stub)
+- **Real + tested:** all of `dedrm-crypto` (PC1, Topaz, AES CBC/ECB/CTR, DES, RC4, CRC-32, PBKDF2, PKCS#7); `dedrm-formats::palmdb`; `dedrm-keys` offline generators (`pid`, `ignoble`, `ereader`, `kobo::derive_userkeys`).
+- **Stubbed** (return `Unimplemented`, doc-comment points at a spec §): all `dedrm-schemes` decrypt bodies, the other `dedrm-formats` containers, and platform key-extraction (`kindle`, `adobe`, `kobo::discover_userkeys`).
+- **Next vertical slice:** Mobipocket (§2) — PalmDB + PC1 are already available, only record/voucher logic remains.
+
+## Implementation gotchas (from the analysis)
+- PC1 and Topaz require **wrapping u32 arithmetic** — the tested ports live in `dedrm-crypto`; reuse them, don't reinvent.
+- ADEPT/B&N book keys are the **last 16 bytes** after PKCS#7 strip, not the first.
+- ADEPT/B&N EPUB per-file decrypt **drops the first 16 bytes** (prepended IV block) before unpad + raw-inflate (windowBits −15).
+- Topaz "encrypted" flag = the **sign of the record index** (negative), not a header field.
+- All MOBI/PalmDB/ION/PDB integers are **big-endian**; treat every "string" as bytes.
+- AES is **no-padding** everywhere; callers strip PKCS#7 themselves (`kdf::pkcs7_unpad`).
+- Windows DPAPI paths (`.kinf2011` v5, Adobe `privateLicenseKey`) are **not reproducible offline** — they need the user's Windows profile.
+- Scheme dispatch: by file extension, then Kindle-family magic bytes. A handler returns `SchemeError::NotThisScheme` to fall through to the next candidate.
+
 <!-- CLAVIX:START -->
 ## Clavix Integration
 
