@@ -30,7 +30,7 @@ pub fn generate_key(name: &str, ccn: &str) -> Result<String> {
 
     // Plaintext = both_sha (20) ‖ 0x0c × 12 = 32 bytes; no cipher padding.
     let mut plaintext = both_sha.to_vec();
-    plaintext.extend(std::iter::repeat(0x0c).take(0x0c));
+    plaintext.resize(plaintext.len() + 0x0c, 0x0c);
 
     let crypt = aes::cbc_encrypt(ccn_sha, name_sha, &plaintext)?;
     let userkey = digest::sha1(&crypt); // 20 bytes

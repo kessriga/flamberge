@@ -49,9 +49,10 @@ fn pc1(key: &[u8], src: &[u8], decryption: bool) -> Result<Vec<u8>> {
             // Compute wide, then mask to 16 bits at the same points as the reference.
             let sum2_tmp = (sum2 as u32).wrapping_add(j as u32).wrapping_mul(20021)
                 .wrapping_add(sum1 as u32);
-            sum1 = (temp1.wrapping_mul(346)) & 0xFFFF;
-            sum2 = ((sum2_tmp.wrapping_add(sum1 as u32)) & 0xFFFF) as u16;
-            temp1 = temp1.wrapping_mul(20021).wrapping_add(1) & 0xFFFF;
+            // temp1/sum1 are u16, so wrapping arithmetic already masks to 16 bits.
+            sum1 = temp1.wrapping_mul(346);
+            sum2 = (sum2_tmp.wrapping_add(sum1 as u32) & 0xFFFF) as u16;
+            temp1 = temp1.wrapping_mul(20021).wrapping_add(1);
             byte_xor_val ^= temp1 ^ sum2;
         }
 
