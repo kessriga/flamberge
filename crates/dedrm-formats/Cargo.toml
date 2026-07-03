@@ -1,0 +1,15 @@
+[package]
+name = "dedrm-formats"
+description = "Container parsers for DeDRM (PalmDB, Topaz TPZ0, KFX-ZIP, Amazon ION, EPUB/OCF, PDF)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+byteorder.workspace = true
+zip.workspace = true
+flate2.workspace = true
+quick-xml.workspace = true
