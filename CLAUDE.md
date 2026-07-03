@@ -8,6 +8,7 @@ Standalone Rust CLI that reimplements the **DeDRM_tools** Calibre plugins (ebook
 
 ## Working conventions
 - Tasks live in **Backlog.md** (`backlog/tasks/`), not a Clavix `tasks.md`. Per task: mark In Progress, record a plan in the task, implement with tests, verify build/test/clippy/fmt, mark Done with a final summary.
+- **When finishing a task, update this CLAUDE.md too** if the completed work changed anything documented here (e.g. the Status section, conventions, or gotchas). Skip only when there is genuinely nothing to update.
 - **Commits: atomic and reasonably short** — one logical change per commit, your judgment on boundaries. Keep unrelated cleanups (e.g. lint fixes) in their own commits.
 - **One branch per task**, cut from `main` (e.g. `feat/task-4-topaz`); never commit to `main` directly. `main` is protected — integrate via PR only, with CI green and commits signed. Commit signing (SSH) is configured globally, so commits sign automatically.
 
