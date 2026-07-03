@@ -350,6 +350,7 @@ dependencies = [
  "flamberge-crypto",
  "flamberge-formats",
  "flamberge-keys",
+ "flate2",
  "thiserror 1.0.69",
 ]
 
