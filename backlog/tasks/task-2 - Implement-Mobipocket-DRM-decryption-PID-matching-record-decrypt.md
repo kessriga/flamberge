@@ -1,9 +1,11 @@
 ---
 id: TASK-2
 title: Implement Mobipocket DRM decryption (PID matching + record decrypt)
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - kessriga.jeukal@proton.me
 created_date: '2026-07-03 19:54'
+updated_date: '2026-07-03 20:24'
 labels:
   - schemes
   - kindle
@@ -41,6 +43,41 @@ Spec: docs/DEDRM_SCHEMES.md §2.3–2.5. Original: mobidedrm.py (parseDRM, proce
 - [ ] #5 Rental/expiry (EXTH 406 nonzero) is rejected with a clear error
 - [ ] #6 Unit tests cover voucher matching with synthetic vouchers and a full-record decrypt against a known key/PID
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+## Plan (docs/DEDRM_SCHEMES.md §2.3–2.5; mobidedrm.py processBook/parseDRM)
+
+All logic lands in `crates/dedrm-schemes/src/mobipocket.rs`; PID helpers in `dedrm-keys::pid` already exist (`book_pid_from_serial`, `eink_pid_from_serial`). No new PID code expected.
+
+### mobipocket::decrypt(input, keys)
+1. `detect()` gate: `PalmDb::parse` + BOOKMOBI/TEXtREAd magic → else `NotThisScheme` (let Topaz/KFX try).
+2. Parse `MobiHeader::from_image`. Read `encryption_type` (rec0 0x0C).
+3. crypto_type 0 → pass-through: output = input unchanged, ext from print-replica(section1 %MOP)/mobi_version.
+4. crypto_type not in {1,2} → `UnknownEncryption(t)`.
+5. EXTH 406 (u64 BE) nonzero → `RentalBook`.
+6. Assemble candidate PIDs: `keys.pids` + per serial in `keys.serials` → `book_pid_from_serial(serial, rec209, token)` and `eink_pid_from_serial(serial)`. Normalize: 10-char→take first 8 (checksum validated, warn-only); 8-char as-is; else skip.
+7. type 1: bookkey_data = TEXtREAd→rec0[0x0E..+16], else rec0[mobi_length+16..+16]; `found_key = PC1::decrypt(T1_KEYVEC, bookkey_data)`; pid="00000000".
+8. type 2: drm block from header; `drm_count==0` → `DrmNotInitialised`; `find_book_key(vouchers, count, goodpids)`:
+   - per pid: `temp_key = PC1::encrypt(KEYVEC1, pid.pad16)`, `sum=Σtemp_key&0xFF`; scan 48-byte vouchers `>LLLBxxx32s`; on `cksum==sum` do `PC1::decrypt(temp_key, cookie)` → `>LL16sLL`; accept if `verification==ver && flags&0x1F==1` → finalkey.
+   - PID-less fallback: `temp_key=KEYVEC1` raw, accept on `verification==ver` only.
+   - none → `NoKeyWorked`.
+9. Decrypt records 1..=text_record_count: `extra = getSizeOfTrailingDataEntries(rec, extra_data_flags)`; `PC1::decrypt(found_key, rec[..len-extra])`; write into output clone in place; trailing bytes untouched. Record 1 `%MOP` ⇒ print-replica.
+10. Patch output record 0: zero DRM voucher block (drm_ptr..+drm_size, type 2 only); write 0xA8 = FF*4 + 00*12 (type 2); zero crypto type at 0x0C (both types). Section 0 header + tail sections (>records+1) untouched.
+11. Extension: print_replica→azw4; mobi_version>=8→azw3; else mobi.
+
+### Errors (add to SchemeError)
+`RentalBook`, `UnknownEncryption(u16)`, `DrmNotInitialised`. Reuse `NoKeyWorked` for no-PID-matched.
+
+### Tests (colocated)
+- `getSizeOfTrailingDataEntries` varint cases.
+- Voucher matching: synthetic voucher → recovers finalkey for matching PID; PID-less fallback path.
+- Full round-trip: synth BOOKMOBI (rec0+voucher+encrypted text) decrypts to plaintext, record-0 patched.
+- Type-1 T1_KEYVEC round-trip.
+- Type-0 pass-through; print-replica → azw4.
+- Rental (EXTH 406) rejected.
+<!-- SECTION:PLAN:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
