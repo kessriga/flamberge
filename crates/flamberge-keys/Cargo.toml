@@ -1,0 +1,17 @@
+[package]
+name = "flamberge-keys"
+description = "Key acquisition for Flamberge: PID generation, offline name+CC keygen, and platform key extraction"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+flamberge-crypto.workspace = true
+thiserror.workspace = true
+hex.workspace = true
+base64.workspace = true
+
+[dev-dependencies]
+hex.workspace = true

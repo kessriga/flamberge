@@ -1,0 +1,20 @@
+[package]
+name = "flamberge-cli"
+description = "Command-line DRM removal for ebooks (Flamberge, reimplemented in Rust)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "flamberge"
+path = "src/main.rs"
+
+[dependencies]
+flamberge-crypto.workspace = true
+flamberge-keys.workspace = true
+flamberge-schemes.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+hex.workspace = true

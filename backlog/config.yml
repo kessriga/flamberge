@@ -1,7 +1,8 @@
-project_name: "DeDRM"
+project_name: "Flamberge"
 default_status: "To Do"
 statuses: ["To Do", "In Progress", "Done"]
 labels: []
+definition_of_done: ["cargo build succeeds with no warnings", "cargo test passes (unit and integration)", "cargo clippy passes with no warnings", "no panic!/unwrap/expect on non-test code paths", "behavior matches docs/DEDRM_SCHEMES.md and code cites the relevant section", "public items have doc comments"]
 date_format: yyyy-mm-dd
 max_column_width: 20
 auto_open_browser: true
