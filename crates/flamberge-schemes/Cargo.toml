@@ -11,4 +11,5 @@ authors.workspace = true
 flamberge-crypto.workspace = true
 flamberge-formats.workspace = true
 flamberge-keys.workspace = true
+flate2.workspace = true
 thiserror.workspace = true
