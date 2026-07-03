@@ -7,19 +7,20 @@ Standalone Rust CLI that reimplements the **DeDRM_tools** Calibre plugins (ebook
 - `../../external/DeDRM_tools/DeDRM_plugin/` — the original Python source the spec was derived from; consult it when the spec is ambiguous.
 
 ## Working conventions
-- Tasks live in **Backlog.md** (`backlog/tasks/`), not a Clavix `tasks.md`. Per task: mark In Progress, record a plan in the task, implement with tests, verify build/test/clippy, mark Done with a final summary.
+- Tasks live in **Backlog.md** (`backlog/tasks/`), not a Clavix `tasks.md`. Per task: mark In Progress, record a plan in the task, implement with tests, verify build/test/clippy/fmt, mark Done with a final summary.
 - **Commits: atomic and reasonably short** — one logical change per commit, your judgment on boundaries. Keep unrelated cleanups (e.g. lint fixes) in their own commits.
-- Feature work goes on a branch off `main` (currently `feat/rust-port`).
+- **One branch per task**, cut from `main` (e.g. `feat/task-4-topaz`); never commit to `main` directly. `main` is protected — integrate via PR only, with CI green and commits signed. Commit signing (SSH) is configured globally, so commits sign automatically.
 
 ## Layout & commands
 - Cargo workspace under `crates/`; dependency direction: `flamberge-crypto` ← `flamberge-formats`, `flamberge-keys` ← `flamberge-schemes` ← `flamberge-cli` (binary name `flamberge`).
 - `cargo build` / `cargo test` from repo root. Unit tests are colocated in each module; every cipher has a round-trip test.
+- CI (`.github/workflows/ci.yml`) gates every PR: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and build+test on Linux/macOS/Windows. Run `cargo fmt` before committing — warnings and unformatted code fail the merge.
 - Errors: `thiserror` in libs, `anyhow` in the CLI. Never `panic!`/`unwrap` on a real code path.
 
 ## Status (what's real vs stub)
-- **Real + tested:** all of `flamberge-crypto` (PC1, Topaz, AES CBC/ECB/CTR, DES, RC4, CRC-32, PBKDF2, PKCS#7); `flamberge-formats::palmdb`; `flamberge-keys` offline generators (`pid`, `ignoble`, `ereader`, `kobo::derive_userkeys`).
-- **Stubbed** (return `Unimplemented`, doc-comment points at a spec §): all `flamberge-schemes` decrypt bodies, the other `flamberge-formats` containers, and platform key-extraction (`kindle`, `adobe`, `kobo::discover_userkeys`).
-- **Next vertical slice:** Mobipocket (§2) — PalmDB + PC1 are already available, only record/voucher logic remains.
+- **Real + tested:** all of `flamberge-crypto` (PC1, Topaz, AES CBC/ECB/CTR, DES, RC4, CRC-32, PBKDF2, PKCS#7); `flamberge-formats::palmdb` + `mobi`; `flamberge-keys` offline generators (`pid`, `ignoble`, `ereader`, `kobo::derive_userkeys`); the **Mobipocket scheme end-to-end** (`flamberge-schemes::mobipocket`, wired through the CLI).
+- **Stubbed** (return `Unimplemented`, doc-comment points at a spec §): all `flamberge-schemes` decrypt bodies *except mobipocket*, the other `flamberge-formats` containers, and platform key-extraction (`kindle`, `adobe`, `kobo::discover_userkeys`).
+- **Next vertical slice:** Topaz (§5) — TPZ0 container parser (TASK-4), then dkey → book-key → records (TASK-5).
 
 ## Implementation gotchas (from the analysis)
 - PC1 and Topaz require **wrapping u32 arithmetic** — the tested ports live in `flamberge-crypto`; reuse them, don't reinvent.
