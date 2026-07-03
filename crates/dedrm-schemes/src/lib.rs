@@ -24,6 +24,9 @@ pub struct DecryptedBook {
     pub data: Vec<u8>,
     /// Output file extension without the dot (e.g. `mobi`, `epub`, `pdf`).
     pub extension: String,
+    /// The book's display title, when the scheme can recover it. Used by the
+    /// CLI for title-based output naming; `None` when unavailable.
+    pub title: Option<String>,
 }
 
 /// The DRM schemes this tool can (eventually) remove.
@@ -80,7 +83,6 @@ pub fn decrypt(input: &[u8], ext: &str, keys: &KeyStore) -> Result<DecryptedBook
         return Err(SchemeError::UnknownFormat(ext.to_string()));
     }
 
-    let mut last_err = None;
     for &scheme in candidates {
         let result = match scheme {
             Scheme::Mobipocket => mobipocket::decrypt(input, keys),
@@ -93,11 +95,16 @@ pub fn decrypt(input: &[u8], ext: &str, keys: &KeyStore) -> Result<DecryptedBook
             Scheme::EReader => ereader::decrypt(input, keys),
             Scheme::Kobo => kobo::decrypt(input, keys),
         };
+        // `NotThisScheme` is the only "keep looking" signal: it means the file
+        // isn't handled by this scheme. Any other error means the scheme claimed
+        // the file (right magic/structure) but decryption failed — that verdict
+        // is terminal and must not be masked by a later candidate's error.
         match result {
             Ok(book) => return Ok(book),
             Err(SchemeError::NotThisScheme) => continue,
-            Err(e) => last_err = Some(e),
+            Err(e) => return Err(e),
         }
     }
-    Err(last_err.unwrap_or(SchemeError::NoKeyWorked))
+    // No candidate recognized the file.
+    Err(SchemeError::NoKeyWorked)
 }

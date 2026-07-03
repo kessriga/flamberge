@@ -174,6 +174,12 @@ pub fn decrypt(input: &[u8], keys: &KeyStore) -> Result<DecryptedBook> {
         .record_range(0)
         .ok_or(SchemeError::NotThisScheme)?;
 
+    // Recover the display title for output naming (§2.6). record 0 slice plus the
+    // 32-byte PalmDB name at the head of the file.
+    let title = db
+        .record(input, 0)
+        .map(|rec0| header.book_title(rec0, input));
+
     // Unencrypted: pass the file through untouched, still detecting Print Replica.
     if header.encryption_type == 0 {
         let print_replica = db
@@ -183,6 +189,7 @@ pub fn decrypt(input: &[u8], keys: &KeyStore) -> Result<DecryptedBook> {
         return Ok(DecryptedBook {
             data: input.to_vec(),
             extension: book_extension(print_replica, header.mobi_version),
+            title,
         });
     }
     if header.encryption_type != 1 && header.encryption_type != 2 {
@@ -274,6 +281,7 @@ pub fn decrypt(input: &[u8], keys: &KeyStore) -> Result<DecryptedBook> {
     Ok(DecryptedBook {
         data: out,
         extension: book_extension(print_replica, header.mobi_version),
+        title,
     })
 }
 

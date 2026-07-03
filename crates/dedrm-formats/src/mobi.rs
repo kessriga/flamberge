@@ -155,6 +155,38 @@ impl MobiHeader {
         MobiHeader::parse(record0, &db.type_creator)
     }
 
+    /// Recover the book's display title (`mobidedrm.py::getBookTitle`).
+    ///
+    /// Three-tier fallback: EXTH record 503, else the MOBI "full name" field (a
+    /// `>II` offset/length pair at record-0 offset 0x54 pointing back into
+    /// `record0`), else the PalmDB name (`db_name`, NUL-terminated, up to 32
+    /// bytes). `record0` is the raw record-0 bytes; `db_name` is the file's
+    /// first 32 bytes. Codepage 65001 decodes as UTF-8 (lossy); anything else is
+    /// treated as Latin-1 (a superset of ASCII — high bytes are approximate, but
+    /// filename cleanup drops non-ASCII regardless). Reference: §2.6.
+    pub fn book_title(&self, record0: &[u8], db_name: &[u8]) -> String {
+        let mut title: &[u8] = b"";
+        if !self.is_textread {
+            if let Some(exth503) = self.exth.get(&503) {
+                title = exth503;
+            } else if let (Ok(toff), Ok(tlen)) = (be_u32(record0, 0x54), be_u32(record0, 0x58)) {
+                let (start, end) = (toff as usize, toff as usize + tlen as usize);
+                if let Some(slice) = record0.get(start..end) {
+                    title = slice;
+                }
+            }
+        }
+        if title.is_empty() {
+            // PalmDB name: NUL-terminated, at most 32 bytes.
+            let name = &db_name[..db_name.len().min(32)];
+            title = match name.iter().position(|&b| b == 0) {
+                Some(nul) => &name[..nul],
+                None => name,
+            };
+        }
+        decode_title(title, self.codepage)
+    }
+
     /// Reconstruct the PID metadata `(rec209, token)` per `getPIDMetaInfo`.
     ///
     /// `rec209` is EXTH record 209; `token` is the concatenation of the EXTH
@@ -177,6 +209,16 @@ impl MobiHeader {
             i += 5;
         }
         (rec209, token)
+    }
+}
+
+/// Decode title bytes to a `String`. Codepage 65001 is UTF-8 (decoded lossily);
+/// every other codepage is treated as Latin-1 (each byte is its own code point).
+fn decode_title(bytes: &[u8], codepage: u32) -> String {
+    if codepage == 65001 {
+        String::from_utf8_lossy(bytes).into_owned()
+    } else {
+        bytes.iter().map(|&b| b as char).collect()
     }
 }
 
@@ -301,6 +343,49 @@ mod tests {
         assert_eq!(h.text_record_count, 3);
         assert_eq!(h.mobi_length, 0);
         assert!(h.exth.is_empty());
+    }
+
+    #[test]
+    fn book_title_prefers_exth_503() {
+        let exth = build_exth(&[(503, b"The Real Title")]);
+        let record0 = build_record0(2, 6, &exth);
+        let h = MobiHeader::parse(&record0, b"BOOKMOBI").unwrap();
+        // db_name is ignored when EXTH 503 is present.
+        assert_eq!(h.book_title(&record0, b"PALMNAME\0"), "The Real Title");
+    }
+
+    #[test]
+    fn book_title_falls_back_to_full_name_offset() {
+        // No EXTH 503: read the >II full-name pointer at 0x54 into record 0.
+        let title = b"Full Name Field";
+        let exth = build_exth(&[(300, b"x")]); // some other EXTH, no 503
+        let mut record0 = build_record0(2, 6, &exth);
+        let toff = record0.len() as u32;
+        record0.extend_from_slice(title);
+        record0[0x54..0x58].copy_from_slice(&toff.to_be_bytes());
+        record0[0x58..0x5c].copy_from_slice(&(title.len() as u32).to_be_bytes());
+        let h = MobiHeader::parse(&record0, b"BOOKMOBI").unwrap();
+        assert_eq!(h.book_title(&record0, b"PALMNAME\0"), "Full Name Field");
+    }
+
+    #[test]
+    fn book_title_falls_back_to_db_name() {
+        // TEXtREAd has no MOBI header, so the title comes from the PalmDB name.
+        let mut r = vec![0u8; 16];
+        r[0x0C..0x0E].copy_from_slice(&0u16.to_be_bytes());
+        let h = MobiHeader::parse(&r, b"TEXtREAd").unwrap();
+        let mut db_name = b"My Palm Book".to_vec();
+        db_name.resize(32, 0); // NUL-padded 32-byte name field
+        assert_eq!(h.book_title(&r, &db_name), "My Palm Book");
+    }
+
+    #[test]
+    fn book_title_utf8_codepage() {
+        // Codepage 65001 → UTF-8 decoding of multibyte content.
+        let exth = build_exth(&[(503, "Café ☕".as_bytes())]);
+        let record0 = build_record0(2, 6, &exth); // codepage 65001
+        let h = MobiHeader::parse(&record0, b"BOOKMOBI").unwrap();
+        assert_eq!(h.book_title(&record0, b""), "Café ☕");
     }
 
     #[test]
