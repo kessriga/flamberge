@@ -1,11 +1,11 @@
 ---
 id: TASK-2
 title: Implement Mobipocket DRM decryption (PID matching + record decrypt)
-status: In Progress
+status: Done
 assignee:
   - kessriga.jeukal@proton.me
 created_date: '2026-07-03 19:54'
-updated_date: '2026-07-03 20:24'
+updated_date: '2026-07-03 20:28'
 labels:
   - schemes
   - kindle
@@ -19,7 +19,7 @@ references:
   - ../../external/DeDRM_tools/DeDRM_plugin/kgenpids.py
 modified_files:
   - crates/dedrm-schemes/src/mobipocket.rs
-  - crates/dedrm-keys/src/pid.rs
+  - crates/dedrm-schemes/src/error.rs
 priority: high
 ordinal: 2000
 ---
@@ -36,12 +36,12 @@ Spec: docs/DEDRM_SCHEMES.md §2.3–2.5. Original: mobidedrm.py (parseDRM, proce
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Type-2 voucher matching recovers the correct finalkey for a matching PID and falls back to the PID-less path when no PID matches
-- [ ] #2 Type-1 books decrypt via T1_KEYVEC; unencrypted (type 0) books pass through, including Print Replica detection
-- [ ] #3 Text records are PC1-decrypted with trailing-data bytes correctly stripped and re-appended; section 0 and tail sections are untouched
-- [ ] #4 Candidate PID list is assembled from explicit PIDs and serials (rec209/token) and 10-char PIDs are normalized to 8
-- [ ] #5 Rental/expiry (EXTH 406 nonzero) is rejected with a clear error
-- [ ] #6 Unit tests cover voucher matching with synthetic vouchers and a full-record decrypt against a known key/PID
+- [x] #1 Type-2 voucher matching recovers the correct finalkey for a matching PID and falls back to the PID-less path when no PID matches
+- [x] #2 Type-1 books decrypt via T1_KEYVEC; unencrypted (type 0) books pass through, including Print Replica detection
+- [x] #3 Text records are PC1-decrypted with trailing-data bytes correctly stripped and re-appended; section 0 and tail sections are untouched
+- [x] #4 Candidate PID list is assembled from explicit PIDs and serials (rec209/token) and 10-char PIDs are normalized to 8
+- [x] #5 Rental/expiry (EXTH 406 nonzero) is rejected with a clear error
+- [x] #6 Unit tests cover voucher matching with synthetic vouchers and a full-record decrypt against a known key/PID
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -79,12 +79,34 @@ All logic lands in `crates/dedrm-schemes/src/mobipocket.rs`; PID helpers in `ded
 - Rental (EXTH 406) rejected.
 <!-- SECTION:PLAN:END -->
 
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented the full Mobipocket decrypt path in `dedrm-schemes::mobipocket`, composing the task-1 MOBI header parser with `dedrm-crypto::pc1` and the existing `dedrm-keys::pid` helpers. No new PID code was needed — `book_pid_from_serial` / `eink_pid_from_serial` already covered `getKindlePids`.
+
+**Flow (docs/DEDRM_SCHEMES.md §2.3–2.5):**
+- `detect()` gate returns `NotThisScheme` for non-Mobi PalmDBs so Topaz/KFX get a turn.
+- Type-2: `find_book_key` derives `temp_key = PC1::encrypt(KEYVEC1, pid.pad16)`, filters 48-byte vouchers on the `sum(temp_key)&0xFF` checksum byte, `PC1::decrypt`s the cookie, and accepts on `verification==ver && flags&0x1F==1`; PID-less fallback uses raw `KEYVEC1` and drops the flags check.
+- Type-1: `PC1::decrypt(T1_KEYVEC, bookkey_data)` (offset 0x0E for TEXtREAd, else `mobi_length+16`).
+- Type-0: pass-through; Print Replica (`%MOP`) detected on record 1.
+- Records `1..=text_record_count` PC1-decrypted with `getSizeOfTrailingDataEntries` bytes stripped then re-appended verbatim. Because each record keeps its length, the output is built as an in-place edit of a clone of the input, keeping all PalmDB offsets valid. Record 0 is patched (DRM voucher block zeroed, 0xA8 pointers killed, crypto type at 0x0C cleared); section 0 header and tail sections are untouched.
+- Candidate PIDs = explicit `keys.pids` + two derived PIDs per serial (rec209/token); 10-char PIDs normalized to their first 8 chars.
+
+**Errors added to `SchemeError`:** `DrmNotInitialised` (drm_count==0), `RentalBook` (EXTH 406 nonzero), `UnknownEncryption(u16)`; `NoKeyWorked` reused when no PID matches.
+
+**Tests (13, colocated):** trailing-data varint cases; synthetic-voucher matching + wrong-flags→fallback; full type-2 and type-1 round trips (record-0 patch asserted); type-0 pass-through and Print Replica extension; rental rejection; non-Mobi fall-through; PID normalization/expansion.
+
+**Verification:** `cargo build --workspace`, `cargo test --workspace` (34 tests pass), and `cargo clippy --workspace --all-targets -- -D warnings` all clean. No `unwrap`/`expect`/`panic!` on non-test paths. Committed as a64c3ce.
+
+**Not in scope (deferred):** HUFF/CDIC decompression of decrypted records (separate concern from DRM removal), EXTH 401/404 in-place patching (cosmetic clipping/TTS, not DRM), and `getK4Pids` key-DB derivation (belongs with TASK-15 key extraction). CLI wiring + integration test is TASK-3.
+<!-- SECTION:FINAL_SUMMARY:END -->
+
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 cargo build succeeds with no warnings
-- [ ] #2 cargo test passes (unit and integration)
-- [ ] #3 cargo clippy passes with no warnings
-- [ ] #4 no panic!/unwrap/expect on non-test code paths
-- [ ] #5 behavior matches docs/DEDRM_SCHEMES.md and code cites the relevant section
-- [ ] #6 public items have doc comments
+- [x] #1 cargo build succeeds with no warnings
+- [x] #2 cargo test passes (unit and integration)
+- [x] #3 cargo clippy passes with no warnings
+- [x] #4 no panic!/unwrap/expect on non-test code paths
+- [x] #5 behavior matches docs/DEDRM_SCHEMES.md and code cites the relevant section
+- [x] #6 public items have doc comments
 <!-- DOD:END -->
