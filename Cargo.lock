@@ -453,6 +453,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "flamberge-integration-tests"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "flamberge-crypto",
+ "flamberge-formats",
+ "flamberge-keys",
+ "flamberge-schemes",
+ "flate2",
+ "rand",
+ "rsa",
+ "rusqlite",
+ "tempfile",
+ "zip",
+]
+
+[[package]]
 name = "flamberge-keys"
 version = "0.1.0"
 dependencies = [

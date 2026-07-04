@@ -6,6 +6,7 @@ members = [
     "crates/flamberge-keys",
     "crates/flamberge-schemes",
     "crates/flamberge-cli",
+    "crates/flamberge-integration-tests",
 ]
 
 [workspace.package]
