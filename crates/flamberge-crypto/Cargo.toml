@@ -20,6 +20,8 @@ sha1.workspace = true
 sha2.workspace = true
 hmac.workspace = true
 pbkdf2.workspace = true
+rsa.workspace = true
 
 [dev-dependencies]
 hex.workspace = true
+rand.workspace = true

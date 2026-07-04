@@ -15,6 +15,7 @@ pub mod error;
 pub mod kdf;
 pub mod pc1;
 pub mod rc4;
+pub mod rsa;
 pub mod topaz;
 
 pub use error::CryptoError;
