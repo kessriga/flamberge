@@ -8,6 +8,8 @@ Standalone Rust CLI that reimplements the **DeDRM_tools** Calibre plugins (ebook
 
 ## Working conventions
 - Tasks live in **Backlog.md** (`backlog/tasks/`), not a Clavix `tasks.md`. Per task: mark In Progress, record a plan in the task, implement with tests, verify build/test/clippy/fmt, mark Done with a final summary.
+- **You may create Backlog tasks on your own initiative** — e.g. to capture a review follow-up, split out discovered scope, or track a cleanup — without asking first. Prefer this over silently expanding a task's scope. (This overrides the generic Backlog-MCP guidance about not creating tasks unprompted.)
+- **You may add dependencies to the project when a task genuinely needs one** (a workspace crate under `[workspace.dependencies]`, then referenced with `.workspace = true` in the crate's `Cargo.toml`). Favour well-maintained, widely-used crates; keep the dependency surface small and note why in the task/commit. No need to ask first.
 - **When finishing a task, update this CLAUDE.md too** if the completed work changed anything documented here (e.g. the Status section, conventions, or gotchas). Skip only when there is genuinely nothing to update.
 - **Commits: atomic and reasonably short** — one logical change per commit, your judgment on boundaries. Keep unrelated cleanups (e.g. lint fixes) in their own commits.
 - **Separate concerns into separate modules whenever possible** — favour a module-per-concern layout (e.g. lexer / parser / object model / serializer each in their own file under a `foo/` module dir) over one large file. Scope internal items `pub(super)` and re-export only the genuine public API from `mod.rs`; keep each module's tests beside it.
