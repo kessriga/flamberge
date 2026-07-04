@@ -1,9 +1,18 @@
 //! Kindle device/account key extraction (`.kinf`/`.k4i`, Android, eInk serials).
 //!
 //! The `.kinf` obfuscation layers (symbol maps, prime rotation, PBKDF2, DPAPI /
-//! GCM-as-CTR) are documented in `docs/DEDRM_SCHEMES.md` §6. Platform extraction
-//! is **stubbed**; note that Windows `.kinf2011` (v5) requires real DPAPI with
-//! the user's profile and cannot be reproduced offline.
+//! GCM-as-CTR) are documented in `docs/DEDRM_SCHEMES.md` §6 and ported from
+//! `kindlekey.py` / `androidkindlekey.py`.
+//!
+//! What is reproducible **offline** (pure crypto, given the machine's `UserName`
+//! and `IDString`): the macOS v5 emulated-DPAPI path and the v6 `.kinf2018`
+//! GCM-as-CTR path — see [`obfuscation`]. Windows v5 `.kinf2011` needs the real
+//! `CryptUnprotectData` with the user's profile and cannot run offline;
+//! gathering the machine values ([`extract_local_keys`]) is likewise host-bound.
+
+pub mod obfuscation;
+
+pub use obfuscation::Platform;
 
 use crate::{KeyError, Result};
 

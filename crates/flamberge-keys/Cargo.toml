@@ -12,6 +12,12 @@ flamberge-crypto.workspace = true
 thiserror.workspace = true
 hex.workspace = true
 base64.workspace = true
+# §6.4 Android extraction: zlib-inflate + untar `backup.ab`, read `map_data_storage.db`.
+flate2.workspace = true
+tar.workspace = true
+rusqlite.workspace = true
+# §6.2 `.k4i` key databases are flat JSON (name → hex value).
+serde_json.workspace = true
 
 [dev-dependencies]
 hex.workspace = true
