@@ -69,14 +69,20 @@ pub fn extract_keys() -> Result<Vec<Vec<u8>>> {
 ///
 /// Pulls every `adept:credentials/adept:privateLicenseKey`, base64-decodes it,
 /// strips the fixed 26-byte header (the macOS blob is *not* encrypted), and
-/// validates each result parses as a PKCS#1 `RSAPrivateKey`. Namespace-aware,
-/// matching the reference `//adept:credentials/adept:privateLicenseKey` XPath:
-/// only `privateLicenseKey` elements nested in a `credentials` element (both in
-/// the ADEPT namespace) are taken. Reference: §7.2 (`adobekey.py`, `isosx`).
+/// keeps only entries that parse as a PKCS#1 `RSAPrivateKey`. Namespace-aware
+/// and **direct-child only**, matching the reference `//adept:credentials/
+/// adept:privateLicenseKey` XPath (both elements in the ADEPT namespace).
+///
+/// A single malformed or non-RSA `privateLicenseKey` is skipped rather than
+/// failing the whole call, so a stray/legacy credential can't hide the other
+/// valid keys in the same file. Reference: §7.2 (`adobekey.py`, `isosx`).
 pub fn parse_activation_dat(xml: &str) -> Result<Vec<Vec<u8>>> {
     let mut reader = NsReader::from_reader(xml.as_bytes());
     let mut buf = Vec::new();
-    let mut credentials_depth = 0usize;
+    // One entry per open element: whether it is an `adept:credentials`. The top
+    // of this stack is the parent of the element currently being started, which
+    // lets us enforce the XPath's direct-child requirement.
+    let mut open_is_credentials: Vec<bool> = Vec::new();
     let mut capturing = false;
     let mut text = String::new();
     let mut keys = Vec::new();
@@ -88,14 +94,15 @@ pub fn parse_activation_dat(xml: &str) -> Result<Vec<Vec<u8>>> {
         match event {
             Event::Start(ref e) => {
                 let local = e.local_name();
-                if is_named(&ns, local.as_ref(), b"credentials") {
-                    credentials_depth += 1;
-                } else if credentials_depth > 0
+                let parent_is_credentials = *open_is_credentials.last().unwrap_or(&false);
+                if !capturing
+                    && parent_is_credentials
                     && is_named(&ns, local.as_ref(), b"privateLicenseKey")
                 {
                     capturing = true;
                     text.clear();
                 }
+                open_is_credentials.push(is_named(&ns, local.as_ref(), b"credentials"));
             }
             Event::Text(ref e) if capturing => {
                 let chunk = e
@@ -103,14 +110,19 @@ pub fn parse_activation_dat(xml: &str) -> Result<Vec<Vec<u8>>> {
                     .map_err(|e| KeyError::Invalid(format!("activation.dat xml: {e}")))?;
                 text.push_str(&chunk);
             }
+            // A CDATA-wrapped key carries its base64 verbatim (unescaped).
+            Event::CData(ref e) if capturing => {
+                let raw: &[u8] = e;
+                text.push_str(&String::from_utf8_lossy(raw));
+            }
             Event::End(ref e) => {
-                let local = e.local_name();
-                if capturing && is_named(&ns, local.as_ref(), b"privateLicenseKey") {
-                    keys.push(decode_key(&text)?);
+                if capturing && is_named(&ns, e.local_name().as_ref(), b"privateLicenseKey") {
+                    if let Some(key) = decode_valid_key(&text) {
+                        keys.push(key);
+                    }
                     capturing = false;
-                } else if is_named(&ns, local.as_ref(), b"credentials") {
-                    credentials_depth = credentials_depth.saturating_sub(1);
                 }
+                open_is_credentials.pop();
             }
             Event::Eof => break,
             _ => {}
@@ -118,16 +130,20 @@ pub fn parse_activation_dat(xml: &str) -> Result<Vec<Vec<u8>>> {
         buf.clear();
     }
 
-    // Reject anything that isn't a well-formed RSA key before handing it on.
-    for key in &keys {
-        flamberge_crypto::rsa::private_key_modulus_len(key)?;
-    }
     Ok(keys)
 }
 
 /// True if a resolved element is `{adept}local`.
 fn is_named(resolved: &ResolveResult, local: &[u8], want: &[u8]) -> bool {
     matches!(resolved, ResolveResult::Bound(bound) if bound.as_ref() == NS_ADEPT) && local == want
+}
+
+/// Decode + strip a `privateLicenseKey`, keeping it only if it is a valid RSA
+/// key DER. Returns `None` for anything malformed so the caller can skip it.
+fn decode_valid_key(b64: &str) -> Option<Vec<u8>> {
+    let der = decode_key(b64).ok()?;
+    flamberge_crypto::rsa::private_key_modulus_len(&der).ok()?;
+    Some(der)
 }
 
 /// base64-decode a `privateLicenseKey` and strip the fixed 26-byte header.
@@ -156,12 +172,24 @@ mod tests {
     use rsa::pkcs1::EncodeRsaPrivateKey;
     use rsa::RsaPrivateKey;
 
+    /// A real 1024-bit RSA key's PKCS#1 DER.
+    fn fresh_der() -> Vec<u8> {
+        let mut rng = rand::thread_rng();
+        let key = RsaPrivateKey::new(&mut rng, 1024).expect("keygen");
+        key.to_pkcs1_der().expect("der").as_bytes().to_vec()
+    }
+
+    /// base64 of a `privateLicenseKey` value: 26-byte header ‖ `payload`.
+    fn key_b64(payload: &[u8]) -> String {
+        let mut blob = vec![0xEEu8; HEADER_STRIP_LEN];
+        blob.extend_from_slice(payload);
+        base64::engine::general_purpose::STANDARD.encode(&blob)
+    }
+
     /// Build an `activation.dat`-shaped document whose privateLicenseKey wraps
     /// `der` behind a 26-byte header, base64-encoded.
     fn activation_dat(der: &[u8]) -> String {
-        let mut blob = vec![0xEEu8; HEADER_STRIP_LEN];
-        blob.extend_from_slice(der);
-        let b64 = base64::engine::general_purpose::STANDARD.encode(&blob);
+        let b64 = key_b64(der);
         format!(
             "<?xml version=\"1.0\"?>\n\
              <activationInfo xmlns=\"http://ns.adobe.com/adept\">\n\
@@ -175,10 +203,7 @@ mod tests {
 
     #[test]
     fn parses_and_strips_header_to_valid_der() {
-        let mut rng = rand::thread_rng();
-        let key = RsaPrivateKey::new(&mut rng, 1024).expect("keygen");
-        let der = key.to_pkcs1_der().expect("der").as_bytes().to_vec();
-
+        let der = fresh_der();
         let keys = parse_activation_dat(&activation_dat(&der)).unwrap();
 
         assert_eq!(keys.len(), 1);
@@ -200,18 +225,44 @@ mod tests {
     }
 
     #[test]
-    fn rejects_non_rsa_der_blob() {
-        // A well-formed XML whose stripped payload is not a valid RSA key.
-        let mut blob = vec![0u8; HEADER_STRIP_LEN];
-        blob.extend_from_slice(b"not a der key at all");
-        let b64 = base64::engine::general_purpose::STANDARD.encode(&blob);
+    fn ignores_private_license_key_nested_below_credentials() {
+        // Direct-child only: a privateLicenseKey one level below credentials
+        // (grandchild) is not the XPath target and must be ignored.
+        let b64 = key_b64(&fresh_der());
+        let xml = format!(
+            "<a xmlns:adept=\"http://ns.adobe.com/adept\"><adept:credentials><wrapper>\
+             <adept:privateLicenseKey>{b64}</adept:privateLicenseKey>\
+             </wrapper></adept:credentials></a>"
+        );
+        assert!(parse_activation_dat(&xml).unwrap().is_empty());
+    }
+
+    #[test]
+    fn skips_non_rsa_key_but_keeps_valid_one() {
+        // Two credentials blocks: the first payload is garbage, the second is a
+        // real key. The bad entry must be skipped, not abort the whole parse.
+        let good = fresh_der();
+        let bad_b64 = key_b64(b"not a der key at all");
+        let good_b64 = key_b64(&good);
         let xml = format!(
             "<a xmlns:adept=\"http://ns.adobe.com/adept\">\
-             <adept:credentials>\
-             <adept:privateLicenseKey>{b64}</adept:privateLicenseKey>\
+             <adept:credentials><adept:privateLicenseKey>{bad_b64}</adept:privateLicenseKey></adept:credentials>\
+             <adept:credentials><adept:privateLicenseKey>{good_b64}</adept:privateLicenseKey></adept:credentials>\
+             </a>"
+        );
+        assert_eq!(parse_activation_dat(&xml).unwrap(), vec![good]);
+    }
+
+    #[test]
+    fn parses_key_wrapped_in_cdata() {
+        let der = fresh_der();
+        let b64 = key_b64(&der);
+        let xml = format!(
+            "<a xmlns:adept=\"http://ns.adobe.com/adept\"><adept:credentials>\
+             <adept:privateLicenseKey><![CDATA[{b64}]]></adept:privateLicenseKey>\
              </adept:credentials></a>"
         );
-        assert!(parse_activation_dat(&xml).is_err());
+        assert_eq!(parse_activation_dat(&xml).unwrap(), vec![der]);
     }
 
     #[test]
