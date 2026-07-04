@@ -355,6 +355,37 @@ mod tests {
         assert_eq!(out["mimetype"], b"application/epub+zip");
     }
 
+    /// AC #4: a key recovered from a fixture `activation.dat` (via the real
+    /// `flamberge_keys::adobe` extractor) populates `adept_keys` and decrypts an
+    /// ADEPT EPUB end to end.
+    #[test]
+    fn decrypt_epub_via_extracted_activation_dat_key() {
+        let content_key = [0x3Au8; 16];
+        let (der, epub, chapter, css) = synth_adept_epub(content_key);
+
+        // Wrap the DER as ADE stores it on macOS: 26-byte header ‖ DER, base64.
+        let mut blob = vec![0u8; flamberge_keys::adobe::HEADER_STRIP_LEN];
+        blob.extend_from_slice(&der);
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&blob);
+        let activation_dat = format!(
+            "<activationInfo xmlns:adept=\"{ADEPT_NS}\"><adept:credentials>\
+             <adept:privateLicenseKey>{b64}</adept:privateLicenseKey>\
+             </adept:credentials></activationInfo>"
+        );
+
+        let extracted = flamberge_keys::adobe::parse_activation_dat(&activation_dat).unwrap();
+        assert_eq!(extracted, vec![der]);
+
+        let keys = KeyStore {
+            adept_keys: extracted,
+            ..KeyStore::default()
+        };
+        let book = crate::decrypt(&epub, "epub", &keys).unwrap();
+        let out = read_zip(&book.data);
+        assert_eq!(out["OEBPS/ch1.html"], chapter);
+        assert_eq!(out["OEBPS/style.css"], css);
+    }
+
     #[test]
     fn wrong_key_reports_no_key_worked() {
         let (_der, epub, _c, _s) = synth_adept_epub([0x01u8; 16]);
