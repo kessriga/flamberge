@@ -165,10 +165,9 @@ fn serials_from_secure_storage(xml: &str) -> Result<Vec<String>> {
             .unwrap_or_default()
     };
 
+    // Note: an absent/undecryptable DsnId is not fatal — get_serials1 still emits
+    // the bare account-token serials (dsnid == "" → `format!("{}{token}")` == token).
     let dsnid = get_value("DsnId");
-    if dsnid.is_empty() {
-        return Ok(Vec::new());
-    }
     let tokens: Vec<String> = get_value("kindle.account.tokens")
         .split(',')
         .map(|s| s.to_string())
@@ -189,8 +188,18 @@ fn serials_from_database(path: &Path) -> Result<Vec<String>> {
         let mut stmt = conn
             .prepare(sql)
             .map_err(|e| KeyError::Invalid(format!("map_data_storage query failed: {e}")))?;
+        // Read the raw column bytes for both TEXT and BLOB and lossy-decode,
+        // mirroring the Python sqlite3 path which uses whatever value the row
+        // holds rather than dropping non-UTF-8 rows.
         let rows = stmt
-            .query_map([], |row| row.get::<_, String>(0))
+            .query_map([], |row| {
+                Ok(match row.get_ref(0)? {
+                    rusqlite::types::ValueRef::Text(b) | rusqlite::types::ValueRef::Blob(b) => {
+                        String::from_utf8_lossy(b).into_owned()
+                    }
+                    _ => String::new(),
+                })
+            })
             .map_err(|e| KeyError::Invalid(format!("map_data_storage query failed: {e}")))?;
         Ok(rows
             .filter_map(|r| r.ok())
@@ -256,10 +265,12 @@ fn serials_from_backup(bytes: &[u8]) -> Result<Vec<String>> {
             .unwrap_or_default();
         let name = name.trim();
         if name.ends_with(STORAGE_XML) {
-            let mut xml = String::new();
-            if entry.read_to_string(&mut xml).is_ok() {
-                serials.extend(serials_from_secure_storage(&xml)?);
-            }
+            let mut bytes = Vec::new();
+            entry
+                .read_to_end(&mut bytes)
+                .map_err(|e| KeyError::Invalid(format!("backup.ab xml read: {e}")))?;
+            let xml = String::from_utf8_lossy(&bytes);
+            serials.extend(serials_from_secure_storage(&xml)?);
         } else if name.ends_with(STORAGE_DB) {
             let mut db_bytes = Vec::new();
             entry
@@ -365,6 +376,23 @@ mod tests {
     }
 
     #[test]
+    fn secure_storage_missing_dsnid_still_yields_token_serials() {
+        // An absent DsnId must not drop the account-token serials (matches
+        // get_serials1: dsnid == "" still emits the bare tokens).
+        let obf = Obfuscation::V1;
+        let entries = vec![(
+            obf.encrypt("kindle.account.tokens").unwrap(),
+            obf.encrypt("tokA,tokB").unwrap(),
+        )];
+        let xml = build_xml(&entries);
+        let serials = serials_from_secure_storage(&xml).unwrap();
+        assert!(serials.contains(&"tokA".to_string()));
+        assert!(serials.contains(&"tokB".to_string()));
+        // No DsnId, so no DSN-prefixed variants beyond the bare tokens.
+        assert!(!serials.iter().any(|s| s.is_empty()));
+    }
+
+    #[test]
     fn secure_storage_v2_yields_serials() {
         let obf = Obfuscation::v2("0123456789abcdef").unwrap();
         let mut entries = vec![
@@ -409,6 +437,22 @@ mod tests {
         assert!(serials.contains(&"tok2".to_string()));
         assert!(serials.contains(&"tok1,tok2".to_string()));
         assert!(serials.contains(&"G222RR11223344tok1".to_string()));
+    }
+
+    #[test]
+    fn map_database_reads_blob_serial() {
+        // A serial stored as a BLOB (not TEXT) must still be extracted, matching
+        // the Python sqlite3 path.
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let conn = rusqlite::Connection::open(tmp.path()).unwrap();
+        conn.execute_batch(
+            "create table device_data(device_data_key text, device_data_value blob);
+             create table userdata(userdata_key text, userdata_value text);
+             insert into device_data values('dsn/serial.number', x'47333333');",
+        )
+        .unwrap();
+        let serials = serials_from_database(tmp.path()).unwrap();
+        assert!(serials.contains(&"G333".to_string())); // 0x47333333 == "G333"
     }
 
     #[test]
