@@ -1,16 +1,20 @@
 ---
 id: TASK-21
 title: 'Avoid full Object clones in PdfDocument::get_object'
-status: In Progress
+status: Done
 assignee:
   - Kessriga Jeükal
 created_date: '2026-07-04 09:59'
-updated_date: '2026-07-04 22:20'
+updated_date: '2026-07-04 22:21'
 labels:
   - formats
   - pdf
   - cleanup
 dependencies: []
+modified_files:
+  - crates/flamberge-formats/src/pdf/document.rs
+  - crates/flamberge-formats/src/pdf/parser.rs
+  - crates/flamberge-schemes/src/pdf_common.rs
 ordinal: 21000
 ---
 
@@ -63,6 +67,23 @@ Verify: cargo build/test/clippy/fmt clean across the workspace; existing pdf + r
 <!-- SECTION:NOTES:BEGIN -->
 Implemented: `get_object` and the `cache` now hand back `Rc<Object>` (refcount bump on cache hit, single `Rc::new` on miss). `resolve` returns `Rc<Object>` (cached handle for a Ref input; one small clone of the borrowed arg for a direct input). `parse_from_objstm` matches the container via `container.as_ref()`. Ripple was minimal thanks to deref coercion — only two `parser.rs` sites (the `/Length` match → `o.as_ref()`; `resolve_shallow` → `.map(|o| (*o).clone())`) and one `pdf_common.rs` site (`.and_then(Object::as_int)` → closure, since a bare fn-ptr can't take `&Rc<Object>`) needed edits. Serializer needed no signature change. Added `repeated_get_object_shares_one_allocation` (AC#3): two fetches of a 200 KB stream object return `Rc::ptr_eq` handles, and `resolve(&Ref(4,0))` yields that same shared handle. cargo build/test (all 6 binaries + integration suite)/clippy -D warnings/fmt all clean.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+`PdfDocument`'s object cache and `get_object` now return `Rc<Object>` instead of a deep `Object` clone. A cache hit is an `Rc` refcount bump; on a miss the freshly-built object is wrapped once in an `Rc` and shared. This removes the repeated deep-copy of large stream `rawdata` buffers that `resolve()` (once per reference hop) and `PdfSerializer::serialize` (once per object id) previously incurred.
+
+Ripple:
+- `resolve()` returns `Rc<Object>` — the cached shared handle for an indirect reference, or a single clone of the (small, borrowed) argument for a direct-object input. The bounded reference-cycle guard is preserved.
+- `parse_from_objstm` matches the container through `container.as_ref()`.
+- `parser.rs`: the `/Length` indirect-resolve matches via `o.as_ref()`; `resolve_shallow` clones out of the handle (`(*o).clone()`) since it still yields owned `Object` for tiny scalar/array values.
+- `pdf_common.rs`: `.and_then(Object::as_int)` became a closure (a bare `fn(&Object)` pointer can't accept `&Rc<Object>`).
+- `PdfSerializer` needed no signature change — deref coercion covers `obj.type_name()` and `write_object(&mut out, &obj)`.
+
+Test: `repeated_get_object_shares_one_allocation` builds a PDF with a 200 KB stream object, fetches it twice, and asserts `Rc::ptr_eq` on the two handles (and that `resolve(&Ref(4,0))` yields the same handle) — proving the body is not re-cloned.
+
+Verification: `cargo build`, `cargo test` (all unit binaries + the 55-test integration suite = the real-PDF round trips), `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo fmt --all -- --check` all clean. Scope stayed within `crates/flamberge-formats/src/pdf/` plus the one unavoidable `pdf_common.rs` caller fix.
+<!-- SECTION:FINAL_SUMMARY:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
