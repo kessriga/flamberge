@@ -1,9 +1,10 @@
 ---
 id: TASK-22
 title: Dedupe EPUB test scaffolding into epub_common
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-04 09:59'
+updated_date: '2026-07-04 22:42'
 labels:
   - schemes
   - epub
@@ -30,6 +31,15 @@ Extract the shared builders into one place — e.g. a `#[cfg(test)]` helper modu
 - [ ] #3 All existing flamberge-schemes tests still pass with the shared helpers; cargo build/test/clippy/fmt are clean
 - [ ] #4 No production (non-test) behaviour changes
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Add a `#[cfg(test)] pub(crate) mod test_support` to `epub_common.rs` holding the shared fixture builders (`pkcs7_pad`, `raw_deflate`, `encrypt_member`, `rights_xml`, `encryption_xml`, `build_zip`, `read_zip`) plus the `ADEPT_NS`/`ENC_NS` constants they need. Items are `pub(crate)` so both scheme test modules can import them; each has a doc comment.
+2. In `adept.rs` tests: delete the moved helpers/consts, add `use crate::epub_common::test_support::*;`, and drop now-unused imports (`std::io::{Read, Write}`, `flamberge_crypto::aes`, `zip::*`). Keep scheme-specific helpers (`seeded_rng`, `rsa_wrap`, `pkcs1_block`, `synth_adept_epub`).
+3. In `ignoble.rs` tests: same — delete moved helpers/consts, glob-import test_support, drop unused imports. Keep `B64`, `user_key_from_cchash`, `wrap_book_key`, `synth_bn_epub`.
+4. Verify `cargo build`, `cargo test -p flamberge-schemes`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all -- --check` are all clean. No production behaviour change.
+<!-- SECTION:PLAN:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->

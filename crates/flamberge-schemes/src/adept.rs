@@ -114,20 +114,14 @@ fn unwrap_book_key(der: &[u8], wrapped: &[u8]) -> Result<Option<[u8; 16]>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::{Read, Write};
+    use crate::epub_common::test_support::*;
 
     use ::rsa::pkcs1::EncodeRsaPrivateKey;
     use ::rsa::traits::PublicKeyParts;
     use ::rsa::{BigUint, RsaPrivateKey};
     use base64::Engine;
-    use flamberge_crypto::aes;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
-    use zip::write::SimpleFileOptions;
-    use zip::{CompressionMethod, ZipWriter};
-
-    const ADEPT_NS: &str = "http://ns.adobe.com/adept";
-    const ENC_NS: &str = "http://www.w3.org/2001/04/xmlenc#";
 
     /// A reproducible RSA key source. Seeding per call site keeps keygen — and so
     /// the wrong-key `[-17]` separator check — deterministic rather than ~1/256
@@ -136,20 +130,8 @@ mod tests {
         StdRng::seed_from_u64(seed)
     }
 
-    // --- crypto helpers mirroring what a real ADEPT packager does ---
-
-    fn pkcs7_pad(data: &[u8], block: usize) -> Vec<u8> {
-        let pad = block - data.len() % block;
-        let mut out = data.to_vec();
-        out.extend(std::iter::repeat_n(pad as u8, pad));
-        out
-    }
-
-    fn raw_deflate(data: &[u8]) -> Vec<u8> {
-        let mut e = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
-        e.write_all(data).unwrap();
-        e.finish().unwrap()
-    }
+    // --- ADEPT-specific crypto helpers (shared EPUB builders live in
+    // `epub_common::test_support`) ---
 
     /// Textbook RSA public op (`m^e mod n`) to wrap a block, inverse of the
     /// scheme's private decrypt.
@@ -171,66 +153,6 @@ mod tests {
         b.push(0x00);
         b.extend_from_slice(payload);
         b
-    }
-
-    /// Encrypt one member as ADEPT stores it: `IV || AES-CBC(book_key, IV,
-    /// pkcs7(body))`, where `body` is raw-deflated when `deflate` is set.
-    fn encrypt_member(book_key: &[u8; 16], content: &[u8], deflate: bool) -> Vec<u8> {
-        let body = if deflate {
-            raw_deflate(content)
-        } else {
-            content.to_vec()
-        };
-        let iv = [0x5Au8; 16];
-        let ct = aes::cbc_encrypt(book_key, &iv, &pkcs7_pad(&body, 16)).unwrap();
-        let mut out = iv.to_vec();
-        out.extend_from_slice(&ct);
-        out
-    }
-
-    fn rights_xml(key_b64: &str) -> Vec<u8> {
-        format!(
-            "<?xml version=\"1.0\"?>\
-             <adept:rights xmlns:adept=\"{ADEPT_NS}\">\
-             <adept:licenseToken><adept:encryptedKey>{key_b64}</adept:encryptedKey>\
-             </adept:licenseToken></adept:rights>"
-        )
-        .into_bytes()
-    }
-
-    fn encryption_xml(paths: &[&str]) -> Vec<u8> {
-        let mut body = format!("<encryption xmlns:enc=\"{ENC_NS}\">");
-        for p in paths {
-            body.push_str(&format!(
-                "<enc:EncryptedData><enc:CipherData>\
-                 <enc:CipherReference URI=\"{p}\"/>\
-                 </enc:CipherData></enc:EncryptedData>"
-            ));
-        }
-        body.push_str("</encryption>");
-        body.into_bytes()
-    }
-
-    fn build_zip(members: &[(&str, Vec<u8>)]) -> Vec<u8> {
-        let mut buf = Vec::new();
-        {
-            let mut w = ZipWriter::new(std::io::Cursor::new(&mut buf));
-            for (name, bytes) in members {
-                let method = if *name == "mimetype" {
-                    CompressionMethod::Stored
-                } else {
-                    CompressionMethod::Deflated
-                };
-                w.start_file(
-                    *name,
-                    SimpleFileOptions::default().compression_method(method),
-                )
-                .unwrap();
-                w.write_all(bytes).unwrap();
-            }
-            w.finish().unwrap();
-        }
-        buf
     }
 
     /// A fresh 1024-bit key plus a synthetic ADEPT EPUB wrapping `content_key`,
@@ -270,19 +192,6 @@ mod tests {
             ("OEBPS/content.opf", b"<package/>".to_vec()),
         ]);
         (der, epub, chapter, css)
-    }
-
-    fn read_zip(bytes: &[u8]) -> BTreeMap<String, Vec<u8>> {
-        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
-        let mut out = BTreeMap::new();
-        for i in 0..archive.len() {
-            let mut f = archive.by_index(i).unwrap();
-            let name = f.name().to_owned();
-            let mut b = Vec::new();
-            f.read_to_end(&mut b).unwrap();
-            out.insert(name, b);
-        }
-        out
     }
 
     // --- unit tests ---
