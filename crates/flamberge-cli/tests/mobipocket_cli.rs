@@ -164,6 +164,45 @@ fn decrypts_with_correct_pid_and_names_by_title() {
 }
 
 #[test]
+fn batch_decrypts_directory_and_skips_strays() {
+    let dir = temp_dir("batch");
+    // A real (synthetic) DRMed book plus a stray non-ebook file in one folder.
+    let (image, _) = synth_book();
+    std::fs::write(dir.join("B00TESTPI0.azw"), &image).unwrap();
+    std::fs::write(dir.join("notes.txt"), b"not an ebook").unwrap();
+
+    let output = flamberge()
+        .arg("decrypt")
+        .arg(&dir) // directory input → batch mode
+        .arg("--pid")
+        .arg(PID)
+        .output()
+        .unwrap();
+
+    // The stray file is skipped (not a failure), so the run succeeds overall.
+    assert!(
+        output.status.success(),
+        "batch run should succeed when the only non-ok file is skipped; stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("OK "), "expected an OK line, got: {stdout}");
+    assert!(
+        stdout.contains("SKIP") && stdout.contains("notes.txt"),
+        "stray file should be reported as skipped, got: {stdout}"
+    );
+    assert!(
+        stdout.contains("1 ok, 0 failed, 1 skipped"),
+        "expected batch tally, got: {stdout}"
+    );
+    // The decrypted book was written; the stray file produced no output.
+    assert!(dir.join("B00TESTPI0_Hello Title_nodrm.mobi").exists());
+    assert!(!dir.join("notes_nodrm.txt").exists());
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn wrong_pid_fails_cleanly_without_writing_output() {
     let dir = temp_dir("badpid");
     let input = dir.join("B00TESTPI0.azw");
