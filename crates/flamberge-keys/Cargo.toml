@@ -19,6 +19,11 @@ rusqlite.workspace = true
 tempfile.workspace = true
 # §6.2 `.k4i` key databases are flat JSON (name → hex value).
 serde_json.workspace = true
+# §7.2 Adobe ADEPT: parse `activation.dat` (namespace-aware XML).
+quick-xml.workspace = true
 
 [dev-dependencies]
 hex.workspace = true
+# §7.2 tests synthesize a real RSA key to exercise activation.dat parsing.
+rsa.workspace = true
+rand.workspace = true
