@@ -13,6 +13,7 @@ pub mod mobi;
 pub mod ocf;
 pub mod palmdb;
 pub mod pdf;
+pub mod pmlz;
 pub mod topaz_container;
 
 pub use error::FormatError;
