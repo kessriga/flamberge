@@ -10,10 +10,12 @@
 //! `CryptUnprotectData` with the user's profile and cannot run offline;
 //! gathering the machine values ([`extract_local_keys`]) is likewise host-bound.
 
+pub mod android;
 pub mod k4i;
 pub mod kinf;
 pub mod obfuscation;
 
+pub use android::serials_from_android;
 pub use k4i::{load_k4i, parse_k4i};
 pub use kinf::{decrypt_kinf, decrypt_kinf_candidates};
 pub use obfuscation::Platform;
@@ -26,10 +28,4 @@ pub type KindleDb = std::collections::HashMap<String, String>;
 /// Extract Kindle keys from the locally installed Kindle for PC/Mac.  **STUB.**
 pub fn extract_local_keys() -> Result<Vec<KindleDb>> {
     Err(KeyError::Unimplemented("kindle::extract_local_keys"))
-}
-
-/// Extract candidate serials from an Android `backup.ab` /
-/// `AmazonSecureStorage.xml` / `map_data_storage.db`.  **STUB.**
-pub fn serials_from_android(_path: &std::path::Path) -> Result<Vec<String>> {
-    Err(KeyError::Unimplemented("kindle::serials_from_android"))
 }
