@@ -273,7 +273,13 @@ fn run_keys(cmd: KeysCommand) -> Result<()> {
             let pid = flamberge_keys::pid::eink_pid_from_serial(&serial);
             println!("{pid}");
         }
-        KeysCommand::Adobe => bail!("adobe key extraction not yet implemented (see docs §7.2)"),
+        KeysCommand::Adobe => {
+            let keys = flamberge_keys::adobe::extract_keys()?;
+            for key in &keys {
+                println!("{}", hex::encode(key));
+            }
+            eprintln!("Found {} ADEPT key(s)", keys.len());
+        }
         KeysCommand::Kindle => bail!("kindle key extraction not yet implemented (see docs §6)"),
         KeysCommand::Kobo => bail!("kobo key derivation not yet implemented (see docs §9.2)"),
     }
