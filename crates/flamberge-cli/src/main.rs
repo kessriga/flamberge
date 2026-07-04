@@ -95,7 +95,7 @@ enum KeysCommand {
     Adobe,
     /// Extract Kindle keys from the local install (not yet implemented).
     Kindle,
-    /// Derive Kobo user keys from this host (not yet implemented).
+    /// Derive Kobo user keys from this host (device/desktop DB + NIC MACs).
     Kobo,
 }
 
@@ -281,7 +281,13 @@ fn run_keys(cmd: KeysCommand) -> Result<()> {
             eprintln!("Found {} ADEPT key(s)", keys.len());
         }
         KeysCommand::Kindle => bail!("kindle key extraction not yet implemented (see docs §6)"),
-        KeysCommand::Kobo => bail!("kobo key derivation not yet implemented (see docs §9.2)"),
+        KeysCommand::Kobo => {
+            let keys = flamberge_keys::kobo::discover_userkeys()?;
+            for key in &keys {
+                println!("{}", hex::encode(key));
+            }
+            eprintln!("Derived {} candidate Kobo user key(s)", keys.len());
+        }
     }
     Ok(())
 }
