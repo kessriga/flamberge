@@ -48,6 +48,16 @@ struct DecryptArgs {
     /// eReader user key as 16 hex chars / 8 bytes (repeatable).
     #[arg(long = "ereader-key")]
     ereader_key: Vec<String>,
+    /// Kobo user key as 32 hex chars / 16 bytes (repeatable).
+    #[arg(long = "kobo-key")]
+    kobo_key: Vec<String>,
+    /// Kobo library SQLite DB (KoboReader.sqlite / Kobo.sqlite); required for
+    /// `.kepub` input since the page keys live there, not in the book.
+    #[arg(long = "kobo-db")]
+    kobo_db: Option<PathBuf>,
+    /// Kobo volume id (book) to decrypt; inferred when the DB has one volume.
+    #[arg(long = "kobo-volumeid")]
+    kobo_volumeid: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -112,6 +122,19 @@ fn run_decrypt(args: DecryptArgs) -> Result<()> {
             .map_err(|_| anyhow::anyhow!("eReader key must be 8 bytes"))?;
         keys.ereader_keys.push(arr);
     }
+    for hexkey in &args.kobo_key {
+        let bytes = hex::decode(hexkey).context("Kobo key must be hex")?;
+        let arr: [u8; 16] = bytes
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("Kobo key must be 16 bytes"))?;
+        keys.kobo_keys.push(arr);
+    }
+    if let Some(path) = &args.kobo_db {
+        keys.kobo_db =
+            Some(std::fs::read(path).with_context(|| format!("reading {}", path.display()))?);
+    }
+    keys.kobo_volumeid = args.kobo_volumeid;
 
     let book = flamberge_schemes::decrypt(&data, ext, &keys)
         .with_context(|| format!("decrypting {}", args.input.display()))?;
