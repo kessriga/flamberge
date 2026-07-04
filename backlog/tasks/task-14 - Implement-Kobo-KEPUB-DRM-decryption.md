@@ -1,11 +1,11 @@
 ---
 id: TASK-14
 title: Implement Kobo (KEPUB) DRM decryption
-status: In Progress
+status: Done
 assignee:
   - Kessriga Jeükal
 created_date: '2026-07-03 19:59'
-updated_date: '2026-07-04 11:18'
+updated_date: '2026-07-04 11:31'
 labels:
   - schemes
   - kobo
@@ -15,8 +15,17 @@ references:
   - docs/DEDRM_SCHEMES.md
   - ../../external/DeDRM_tools/Obok_plugin/obok/obok.py
 modified_files:
-  - crates/flamberge-schemes/src/kobo.rs
-  - crates/flamberge-keys/src/kobo.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/flamberge-crypto/src/aes.rs
+  - crates/flamberge-keys/src/lib.rs
+  - crates/flamberge-schemes/Cargo.toml
+  - crates/flamberge-schemes/src/kobo/mod.rs
+  - crates/flamberge-schemes/src/kobo/db.rs
+  - crates/flamberge-schemes/src/kobo/content.rs
+  - crates/flamberge-schemes/src/kobo/tests.rs
+  - crates/flamberge-cli/src/main.rs
+  - CLAUDE.md
 priority: low
 ordinal: 14000
 ---
@@ -29,11 +38,11 @@ Implement flamberge-schemes::kobo. Read per-file page keys from the Kobo SQLite 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Per-file page keys are read from content_keys/content in the Kobo SQLite DB (with the WAL header workaround on a temp copy)
-- [ ] #2 Two-layer AES-128-ECB decrypt (user key -> page key -> contents) + CMS/PKCS#7 padding strip yields plaintext
-- [ ] #3 The correct user key is found by trial using content validation (xhtml/jpeg sniffing); DRM-free files are copied
-- [ ] #4 Output is a repackaged EPUB; a book with no working key fails clearly
-- [ ] #5 Integration test decrypts a synthesized KEPUB + minimal SQLite DB with a derive_userkeys candidate and asserts content
+- [x] #1 Per-file page keys are read from content_keys/content in the Kobo SQLite DB (with the WAL header workaround on a temp copy)
+- [x] #2 Two-layer AES-128-ECB decrypt (user key -> page key -> contents) + CMS/PKCS#7 padding strip yields plaintext
+- [x] #3 The correct user key is found by trial using content validation (xhtml/jpeg sniffing); DRM-free files are copied
+- [x] #4 Output is a repackaged EPUB; a book with no working key fails clearly
+- [x] #5 Integration test decrypts a synthesized KEPUB + minimal SQLite DB with a derive_userkeys candidate and asserts content
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -54,12 +63,31 @@ Implement flamberge-schemes::kobo. Read per-file page keys from the Kobo SQLite 
 6. Verify build/test/clippy/fmt; update CLAUDE.md Status; PR.
 <!-- SECTION:PLAN:END -->
 
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented `flamberge-schemes::kobo` (§9, port of `obok.py`) — the final book-decryption scheme; all schemes are now real end-to-end. PR #15.
+
+**Design.** Unlike the other schemes, Kobo's per-file wrapped page keys live in an external SQLite DB, not in the book. Threaded the DB into the scheme via two new `KeyStore` fields: `kobo_db: Option<Vec<u8>>` (raw sqlite bytes) and `kobo_volumeid: Option<String>`.
+
+**Module dir `kobo/` (db/content/mod):**
+- `db.rs`: WAL header patch (bytes 18–19 → `01 01`) on a temp copy so `rusqlite` (bundled, no system dep) opens it without a `-wal` sidecar; reads `(elementid, elementkey)` for the volume via the reference join `content_keys, content WHERE volumeid=?1 AND volumeid=contentid`, base64-decodes each key, and fetches the Title. Volume id provided or inferred for single-volume DBs (clear errors for zero/multiple).
+- `content.rs`: two-layer AES-128-ECB (`user_key` → page key → member) + CMS/PKCS#7 strip (faithful `__removeaespadding` port); `check()` sniffs xhtml (printable-ASCII after BOM) / jpeg (`FF D8 FF`) by member extension.
+- `mod.rs`: ZIP-magic gate (`NotThisScheme` otherwise); requires `kobo_db` (clear error otherwise); trial-decrypts with each `kobo_keys` candidate, accepts the key under which no checkable member fails, repackages via `ocf::repackage` (mimetype-first stored + deflate rest; DRM-free members copied) → `.epub`.
+
+**Supporting:** added `aes::ecb_encrypt` round-trip partner to `flamberge-crypto` (mirrors the DES one; builds test fixtures). CLI flags `--kobo-key`/`--kobo-db`/`--kobo-volumeid`. Deps `rusqlite` (bundled) + `tempfile`.
+
+**Verification:** 12 new Kobo tests (unit + synthesized-KEPUB/SQLite integration incl. no-key/missing-db/non-zip paths). Full workspace 171 tests pass; clippy `-D warnings` clean; fmt clean. Also driven end-to-end through the `flamberge` binary against real on-disk fixtures, decrypted output verified independently.
+
+**Out of scope (unchanged):** on-host Kobo user-key discovery (`kobo::discover_userkeys`, §9.2 → TASK-17) remains stubbed; keys are supplied via `derive_userkeys` / `--kobo-key`.
+<!-- SECTION:FINAL_SUMMARY:END -->
+
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 cargo build succeeds with no warnings
-- [ ] #2 cargo test passes (unit and integration)
-- [ ] #3 cargo clippy passes with no warnings
-- [ ] #4 no panic!/unwrap/expect on non-test code paths
-- [ ] #5 behavior matches docs/DEDRM_SCHEMES.md and code cites the relevant section
-- [ ] #6 public items have doc comments
+- [x] #1 cargo build succeeds with no warnings
+- [x] #2 cargo test passes (unit and integration)
+- [x] #3 cargo clippy passes with no warnings
+- [x] #4 no panic!/unwrap/expect on non-test code paths
+- [x] #5 behavior matches docs/DEDRM_SCHEMES.md and code cites the relevant section
+- [x] #6 public items have doc comments
 <!-- DOD:END -->
