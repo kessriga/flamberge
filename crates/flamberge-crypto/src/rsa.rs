@@ -50,6 +50,16 @@ pub fn private_decrypt_raw(der: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>> {
     Ok(out)
 }
 
+/// Parse a PKCS#1 `RSAPrivateKey` DER and return its modulus size in bytes.
+///
+/// Used to confirm an extracted ADEPT "adobekey.der" is well-formed before it is
+/// handed to the schemes; a malformed blob is rejected rather than silently kept.
+pub fn private_key_modulus_len(der: &[u8]) -> Result<usize> {
+    let key = RsaPrivateKey::from_pkcs1_der(der)
+        .map_err(|e| CryptoError::Rsa(format!("parse RSAPrivateKey DER: {e}")))?;
+    Ok(key.size())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
