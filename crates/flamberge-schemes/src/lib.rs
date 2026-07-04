@@ -12,6 +12,7 @@ pub mod ignoble;
 pub mod kfx;
 pub mod kobo;
 pub mod mobipocket;
+mod pdf_common;
 pub mod topaz;
 
 pub use error::SchemeError;

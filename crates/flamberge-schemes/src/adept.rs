@@ -9,9 +9,10 @@ use std::collections::BTreeMap;
 
 use flamberge_crypto::rsa;
 use flamberge_formats::ocf::{self, EpubScheme, OcfEncryption};
+use flamberge_formats::pdf::PdfDocument;
 
 use crate::epub_common::{decode_b64, decrypt_member};
-use crate::{DecryptedBook, KeyStore, Result, SchemeError};
+use crate::{pdf_common, DecryptedBook, KeyStore, Result, SchemeError};
 
 /// Remove Adobe ADEPT DRM from an EPUB: RSA-unwrap the book key with a candidate
 /// user key, AES-decrypt + inflate each encrypted member, and repackage the OCF.
@@ -55,9 +56,31 @@ pub fn decrypt_epub(input: &[u8], keys: &KeyStore) -> Result<DecryptedBook> {
     })
 }
 
-/// PDF ADEPT (§7.4, EBX_HANDLER) — pending the PDF tokenizer (TASK-11/12).
-pub fn decrypt_pdf(_input: &[u8], _keys: &KeyStore) -> Result<DecryptedBook> {
-    Err(SchemeError::Unimplemented("adept::decrypt_pdf"))
+/// Remove Adobe ADEPT DRM from a PDF (§7.4, `EBX_HANDLER`): recover the book key
+/// from the `/Encrypt` `ADEPT_LICENSE` (base64 → inflate → adept XML →
+/// RSA-unwrap), RC4-decipher every object, and re-emit a clean PDF.
+///
+/// Returns [`SchemeError::NotThisScheme`] for non-PDF input, non-EBX handlers, or
+/// a B&N-shaped (48-byte AES) license — the last so `.pdf` dispatch falls through
+/// to [`crate::ignoble::decrypt_pdf`] — and [`SchemeError::NoKeyWorked`] when no
+/// supplied ADEPT key unwraps the book key.
+pub fn decrypt_pdf(input: &[u8], keys: &KeyStore) -> Result<DecryptedBook> {
+    if !input.starts_with(b"%PDF") {
+        return Err(SchemeError::NotThisScheme);
+    }
+    let doc = PdfDocument::parse(input)?;
+    let license = pdf_common::ebx_license(&doc)?;
+    // A 48-byte (zero-IV AES) wrapped key is B&N's, not ADEPT's RSA block.
+    if license.wrapped.len() == pdf_common::BN_WRAPPED_LEN {
+        return Err(SchemeError::NotThisScheme);
+    }
+    let book_key = recover_book_key(&license.wrapped, keys)?;
+    let data = pdf_common::decrypt_to_clean_pdf(&doc, book_key, license.version)?;
+    Ok(DecryptedBook {
+        data,
+        extension: "pdf".to_string(),
+        title: None,
+    })
 }
 
 /// Try each candidate ADEPT user key (a PKCS#1 RSA DER) until one unwraps the
