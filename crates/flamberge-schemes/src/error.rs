@@ -34,6 +34,11 @@ pub enum SchemeError {
     #[error("unknown Mobipocket encryption type {0}")]
     UnknownEncryption(u16),
 
+    /// KFX voucher decrypted but the book is not a purchase (rental/loan/etc.);
+    /// these tools are intended for purchased books only (§3.3).
+    #[error("book is licensed as {0}, not a purchase")]
+    NotPurchased(String),
+
     #[error("not yet implemented: {0}")]
     Unimplemented(&'static str),
 }

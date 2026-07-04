@@ -53,6 +53,8 @@ pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 flate2 = "1"
 quick-xml = "0.36"
+# LZMA "alone"/legacy .lzma (FORMAT_ALONE) for KFX compressed pages (§3.4)
+lzma-rs = "0.3"
 
 # cli
 clap = { version = "4", features = ["derive"] }
