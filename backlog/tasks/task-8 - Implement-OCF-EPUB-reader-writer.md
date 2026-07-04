@@ -1,9 +1,10 @@
 ---
 id: TASK-8
 title: Implement OCF/EPUB reader + writer
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-03 19:57'
+updated_date: '2026-07-04 08:11'
 labels:
   - formats
   - epub
@@ -36,6 +37,22 @@ This is I/O + XML only; the crypto lives in the scheme tasks. Spec: docs/DEDRM_S
 - [ ] #3 Repackaging writer emits mimetype first + stored, deflates other members, preserves entry metadata, and omits rights.xml/encryption.xml
 - [ ] #4 Round-trip test: read a synthetic encrypted EPUB, replace one member, re-zip, and re-open asserting structure + mimetype placement
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Implement `flamberge-formats::ocf` (I/O + XML only, no crypto). Reference: DEDRM_SCHEMES §4.4 (B&N) / §7.3 (ADEPT); Python `ineptepub.py`/`ignobleepub.py`.
+
+1. `OcfEncryption::parse(zip)`: open zip; if `META-INF/rights.xml` present, extract the `{adept}encryptedKey` element text via a namespace-aware `quick_xml::NsReader` → `wrapped_key_b64`. If `META-INF/encryption.xml` present, collect every `{enc}CipherReference@URI` → `encrypted_paths` (HashSet).
+2. `EpubScheme` enum {Adept, BarnesNoble}; `OcfEncryption::scheme()` maps wrapped-key length 172→Adept, 64→BarnesNoble, else None. Constants `ADEPT_KEY_LEN=172`, `BN_KEY_LEN=64`.
+3. `is_encrypted_epub(zip)`: true iff BOTH rights.xml and encryption.xml members exist (matches Python detection guard).
+4. `read_all_members(zip)`: decompress every member in archive order → Vec<(name, bytes)> so the scheme can decrypt listed members.
+5. `repackage(original, replacements)`: emit new zip — `mimetype` first + STORED, all other members DEFLATED, preserve last-modified time + unix permissions, DROP rights.xml/encryption.xml, substitute replacement bytes for named members, re-deflate unchanged members' plaintext.
+
+Tests (colocated): synthetic EPUB builder; parse extracts key+paths; scheme detection 172/64/absent; is_encrypted_epub true/false; round-trip repackage replacing one member asserts mimetype first+STORED, rights/encryption dropped, structure preserved.
+
+Verify: cargo fmt/build/clippy -D warnings/test. Update CLAUDE.md Status.
+<!-- SECTION:PLAN:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
