@@ -104,35 +104,17 @@ pub fn eink_pid_from_serial(serial: &str) -> String {
     checksum_pid(&format!("{base}*"))
 }
 
-/// CRC-32 (poly `0xEDB88320`) table used to seed the device PID (§6.5,
-/// `kgenpids.py::generatePidEncryptionTable`).
-fn pid_encryption_table() -> [u32; 256] {
-    let mut table = [0u32; 256];
-    for (i, slot) in table.iter_mut().enumerate() {
-        let mut value = i as u32;
-        for _ in 0..8 {
-            value = if value & 1 == 0 {
-                value >> 1
-            } else {
-                (value >> 1) ^ 0xEDB8_8320
-            };
-        }
-        *slot = value;
-    }
-    table
-}
-
 /// `generateDevicePID` — a CRC-seeded 8-char PID from the first 4 DSN bytes.
 /// (The plugin notes this PID is used for nothing, but it stays in the list.)
-fn generate_device_pid(table: &[u32; 256], dsn: &[u8]) -> Option<String> {
+///
+/// `generatePidSeed` is a reflected CRC-32 (poly `0xEDB88320`, init 0, no final
+/// XOR) over `dsn[..4]` — exactly [`crc32::flamberge`], so we reuse it rather
+/// than rebuild the 256-entry table per call (§6.5).
+fn generate_device_pid(dsn: &[u8]) -> Option<String> {
     if dsn.len() < 4 {
         return None;
     }
-    let mut seed = 0u32;
-    for &b in &dsn[..4] {
-        let index = ((b as u32) ^ seed) & 0xFF;
-        seed = (seed >> 8) ^ table[index as usize];
-    }
+    let seed = crc32::flamberge(&dsn[..4]);
     let mut pid = [
         (seed >> 24) as u8,
         (seed >> 16) as u8,
@@ -197,7 +179,7 @@ pub fn k4_pids(rec209: &[u8], token: &[u8], db: &crate::kindle::KindleDb) -> Vec
     };
 
     let mut pids = Vec::new();
-    if let Some(device_pid) = generate_device_pid(&pid_encryption_table(), &dsn) {
+    if let Some(device_pid) = generate_device_pid(&dsn) {
         pids.push(checksum_pid(&device_pid));
     }
     // Primary book PID and two variants (with/without the DSN or account token).

@@ -12,6 +12,8 @@
 //!
 //! Ported from `kindlekey.py::getDBfromFile`.
 
+use std::sync::LazyLock;
+
 use flamberge_crypto::{aes, digest, kdf};
 
 use super::obfuscation::{decode, derotate, encode, encode_hash, Platform, CHARMAP1, TESTMAP8};
@@ -24,6 +26,16 @@ const HEADER_PASSWORD: &[u8] = b"header_key_data";
 const HEADER_SALT: &[u8] = b"HEADER.2011";
 /// Separator woven into every derived-key password: `USER + SEP + IDString`.
 const PASSWORD_SEP: &[u8] = b"+@#$%+";
+
+/// Build the derived-key password material `user_name + SEP + id_string`, shared
+/// by the v5 (Mac) and v6 key derivations.
+fn password_material(user_name: &[u8], id_string: &[u8]) -> Vec<u8> {
+    let mut sp = Vec::with_capacity(user_name.len() + PASSWORD_SEP.len() + id_string.len());
+    sp.extend_from_slice(user_name);
+    sp.extend_from_slice(PASSWORD_SEP);
+    sp.extend_from_slice(id_string);
+    sp
+}
 
 /// The key-name dictionary. `namehashmap[encodeHash(name, testMap8)] = name`
 /// recovers readable names for the records whose hash matches; unknown records
@@ -109,11 +121,10 @@ struct MacCud {
 impl MacCud {
     fn new(entropy: &[u8], user_name: &[u8], id_string: &[u8], platform: Platform) -> Self {
         let charmap2 = platform.charmap2();
-        let mut sp = Vec::with_capacity(user_name.len() + PASSWORD_SEP.len() + id_string.len());
-        sp.extend_from_slice(user_name);
-        sp.extend_from_slice(PASSWORD_SEP);
-        sp.extend_from_slice(id_string);
-        let passwd = encode(&digest::sha256(&sp), charmap2);
+        let passwd = encode(
+            &digest::sha256(&password_material(user_name, id_string)),
+            charmap2,
+        );
         let key_iv = kdf::pbkdf2_sha1(&passwd, entropy, 0x800, 0x400);
         MacCud {
             key: key_iv[0..32].to_vec(),
@@ -165,12 +176,10 @@ impl Decryptor {
                 // salt = str(0x6d8 * build) + guid
                 let mut salt = (0x6d8 * header.build).to_string().into_bytes();
                 salt.extend_from_slice(&header.guid);
-                let mut sp =
-                    Vec::with_capacity(user_name.len() + PASSWORD_SEP.len() + id_string.len());
-                sp.extend_from_slice(user_name);
-                sp.extend_from_slice(PASSWORD_SEP);
-                sp.extend_from_slice(id_string);
-                let passwd = encode(&digest::sha256(&sp), charmap5);
+                let passwd = encode(
+                    &digest::sha256(&password_material(user_name, id_string)),
+                    charmap5,
+                );
                 let key = kdf::pbkdf2_sha1(&passwd, &salt, 10000, 0x400)[..32].to_vec();
                 Ok(Decryptor::V6 { key, charmap5 })
             }
@@ -227,7 +236,6 @@ pub fn decrypt_kinf(
     let decryptor = Decryptor::build(&header, platform, user_name, id_string)?;
 
     let charmap5 = platform.charmap5();
-    let namehashmap = name_hash_map();
 
     let items: Vec<&[u8]> = items.collect();
     let mut db = KindleDb::new();
@@ -252,10 +260,9 @@ pub fn decrypt_kinf(
         let encdata: Vec<u8> = items[idx..idx + rcnt].concat();
         idx += rcnt;
 
-        let keyname = namehashmap
-            .iter()
-            .find(|(hash, _)| hash.as_slice() == keyhash)
-            .map(|(_, name)| (*name).to_string())
+        let keyname = NAME_HASH_MAP
+            .get(keyhash)
+            .map(|name| (*name).to_string())
             .unwrap_or_else(|| String::from_utf8_lossy(keyhash).into_owned());
 
         let derotated = derotate(&encdata);
@@ -294,13 +301,16 @@ pub fn decrypt_kinf_candidates(
     Err(last)
 }
 
-/// `{ encodeHash(name, testMap8): name }` for the known key names.
-fn name_hash_map() -> Vec<(Vec<u8>, &'static str)> {
-    NAMES
-        .iter()
-        .map(|&name| (encode_hash(name.as_bytes(), TESTMAP8), name))
-        .collect()
-}
+/// `{ encodeHash(name, testMap8): name }` for the known key names. Built once
+/// (the map is the same for every file and every IDString candidate) and shared,
+/// so `decrypt_kinf_candidates` doesn't recompute 22 MD5 hashes per candidate.
+static NAME_HASH_MAP: LazyLock<std::collections::HashMap<Vec<u8>, &'static str>> =
+    LazyLock::new(|| {
+        NAMES
+            .iter()
+            .map(|&name| (encode_hash(name.as_bytes(), TESTMAP8), name))
+            .collect()
+    });
 
 #[cfg(test)]
 mod tests {
