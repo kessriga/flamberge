@@ -244,8 +244,8 @@ struct ContainerRec {
     nextpos: usize,
     /// Parent container's `parenttid`, restored on step-out.
     tid: i32,
-    /// Parent's remaining byte budget, restored on step-out.
-    remaining: i64,
+    /// Parent container's `limit`, restored on step-out.
+    parent_limit: usize,
 }
 
 #[derive(Clone)]
@@ -318,8 +318,10 @@ pub struct BinaryIonParser<'a> {
     pos: usize,
     initpos: usize,
     state: ParserState,
-    /// Remaining byte budget for the current container; `-1` = unbounded (top).
-    localremaining: i64,
+    /// Exclusive end offset of the current container; `data.len()` at top level.
+    /// Reads are bounded by the sub-slice `data[pos..limit]`, so container extent
+    /// is enforced by position rather than a running byte counter.
+    limit: usize,
     needhasnext: bool,
     eof: bool,
     isinstruct: bool,
@@ -345,7 +347,7 @@ impl<'a> BinaryIonParser<'a> {
             pos: 0,
             initpos: 0,
             state: ParserState::BeforeTid,
-            localremaining: -1,
+            limit: data.len(),
             needhasnext: true,
             eof: false,
             isinstruct: false,
@@ -384,7 +386,7 @@ impl<'a> BinaryIonParser<'a> {
     pub fn reset(&mut self) {
         self.state = ParserState::BeforeTid;
         self.needhasnext = true;
-        self.localremaining = -1;
+        self.limit = self.data.len();
         self.eof = false;
         self.isinstruct = false;
         self.containerstack.clear();
@@ -425,18 +427,11 @@ impl<'a> BinaryIonParser<'a> {
             return Err(FormatError::Invalid("ION step_in in invalid state".into()));
         }
 
-        let mut nextrem = self.localremaining;
-        if nextrem != -1 {
-            nextrem -= self.valuelen as i64;
-            if nextrem < 0 {
-                nextrem = 0;
-            }
-        }
         let nextpos = self.pos + self.valuelen;
         self.containerstack.push(ContainerRec {
             nextpos,
             tid: self.parenttid,
-            remaining: nextrem,
+            parent_limit: self.limit,
         });
 
         self.isinstruct = self.valuetid == TID_STRUCT;
@@ -445,7 +440,9 @@ impl<'a> BinaryIonParser<'a> {
         } else {
             ParserState::BeforeTid
         };
-        self.localremaining = self.valuelen as i64;
+        // Bound the view to this container. `min` is a guard against a malformed
+        // length that overruns the parent; well-formed values give `nextpos`.
+        self.limit = nextpos.min(self.limit);
         self.parenttid = self.valuetid;
         self.clear_value();
         self.needhasnext = true;
@@ -470,6 +467,8 @@ impl<'a> BinaryIonParser<'a> {
         self.needhasnext = true;
         self.clear_value();
 
+        // Skip any unread remainder while `limit` still bounds this container,
+        // then restore the parent's limit.
         if rec.nextpos > self.pos {
             let skip = rec.nextpos - self.pos;
             self.skip(skip)?;
@@ -478,7 +477,7 @@ impl<'a> BinaryIonParser<'a> {
                 "ION step_out position mismatch".into(),
             ));
         }
-        self.localremaining = rec.remaining;
+        self.limit = rec.parent_limit;
         Ok(())
     }
 
@@ -645,20 +644,19 @@ impl<'a> BinaryIonParser<'a> {
         Ok(())
     }
 
-    /// Read `count` bytes, decrementing the container budget. Returns a slice
+    /// The unread bytes of the current container: `data[pos..limit]`.
+    /// `pos <= limit <= data.len()` is maintained by `step_in`/`step_out`.
+    fn remaining(&self) -> &'a [u8] {
+        self.data.get(self.pos..self.limit).unwrap_or(&[])
+    }
+
+    /// Read `count` bytes from within the current container. Returns a slice
     /// borrowed from the underlying stream (lifetime `'a`).
     fn read(&mut self, count: usize) -> Result<&'a [u8]> {
-        if self.localremaining != -1 {
-            self.localremaining -= count as i64;
-            if self.localremaining < 0 {
-                return Err(FormatError::Invalid(
-                    "ION read past container budget".into(),
-                ));
-            }
-        }
         let end = self
             .pos
             .checked_add(count)
+            .filter(|&end| end <= self.limit)
             .ok_or(FormatError::Truncated(self.pos))?;
         let slice = self
             .data
@@ -669,53 +667,32 @@ impl<'a> BinaryIonParser<'a> {
     }
 
     fn skip(&mut self, count: usize) -> Result<()> {
-        if self.localremaining != -1 {
-            self.localremaining -= count as i64;
-            if self.localremaining < 0 {
-                return Err(FormatError::Truncated(self.pos));
-            }
-        }
-        let end = self
-            .pos
-            .checked_add(count)
-            .ok_or(FormatError::Truncated(self.pos))?;
-        if end > self.data.len() {
-            return Err(FormatError::Truncated(self.pos));
-        }
-        self.pos = end;
-        Ok(())
+        self.read(count).map(|_| ())
     }
 
     fn read_varuint_stream(&mut self) -> Result<u64> {
-        let rem = self.data.get(self.pos..).unwrap_or(&[]);
-        let (value, consumed) = read_varuint(rem)?;
-        self.read(consumed)?;
+        let (value, consumed) = read_varuint(self.remaining())?;
+        self.pos += consumed;
         Ok(value)
     }
 
     fn read_field_id(&mut self) -> Result<i64> {
-        if self.localremaining != -1 && self.localremaining < 1 {
+        if self.pos >= self.limit {
             return Ok(SID_UNKNOWN);
         }
         match self.read_varuint_stream() {
             Ok(v) => Ok(v as i64),
-            // A clean end-of-data mid-field id means "no more fields".
+            // A clean end-of-container mid-field id means "no more fields".
             Err(FormatError::Truncated(_)) => Ok(SID_UNKNOWN),
             Err(e) => Err(e),
         }
     }
 
     fn read_type_id(&mut self) -> Result<i32> {
-        if self.localremaining != -1 {
-            if self.localremaining < 1 {
-                return Ok(-1);
-            }
-            self.localremaining -= 1;
+        if self.pos >= self.limit {
+            return Ok(-1);
         }
-        let b = match self.data.get(self.pos) {
-            Some(&b) => b,
-            None => return Ok(-1),
-        };
+        let b = self.data[self.pos];
         self.pos += 1;
 
         let result = (b >> 4) as i32;
@@ -1138,6 +1115,39 @@ mod tests {
 
         assert_eq!(p.next().unwrap(), None);
         p.step_out().unwrap();
+    }
+
+    #[test]
+    fn nested_container_bound_stops_at_sibling() {
+        // A list [ [7, 8], 9 ]: after stepping out of the inner list, the outer
+        // list's bound must be restored so the sibling `9` is still reachable and
+        // not swallowed by the inner list's extent.
+        let data = {
+            let mut d = bvm();
+            d.extend(e_list(&[e_list(&[e_posint(7), e_posint(8)]), e_posint(9)]));
+            d
+        };
+        let mut p = BinaryIonParser::new(&data);
+
+        assert_eq!(p.next().unwrap(), Some(TypeId::List));
+        p.step_in().unwrap();
+
+        assert_eq!(p.next().unwrap(), Some(TypeId::List));
+        p.step_in().unwrap();
+        assert_eq!(p.next().unwrap(), Some(TypeId::PosInt));
+        assert_eq!(p.int_value().unwrap(), 7);
+        assert_eq!(p.next().unwrap(), Some(TypeId::PosInt));
+        assert_eq!(p.int_value().unwrap(), 8);
+        assert_eq!(p.next().unwrap(), None);
+        p.step_out().unwrap();
+
+        // Sibling of the inner list, within the outer list's restored bound.
+        assert_eq!(p.next().unwrap(), Some(TypeId::PosInt));
+        assert_eq!(p.int_value().unwrap(), 9);
+        assert_eq!(p.next().unwrap(), None);
+        p.step_out().unwrap();
+
+        assert_eq!(p.next().unwrap(), None);
     }
 
     #[test]
