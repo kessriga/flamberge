@@ -69,11 +69,16 @@ fn open_patched(db_bytes: &[u8]) -> Result<(tempfile::NamedTempFile, Connection)
     Ok((file, conn))
 }
 
-/// The single distinct `volumeid` in `content_keys`, or a clear error when the
-/// DB holds none or several (in which case the caller must disambiguate).
+/// The single distinct `volumeid` in the library, or a clear error when the DB
+/// holds none or several (in which case the caller must disambiguate). Joins
+/// `content` exactly as obok's book enumeration does, so a stale `content_keys`
+/// row for a volume no longer in `content` does not count as a second book.
 fn single_volume(conn: &Connection) -> Result<String> {
     let mut stmt = conn
-        .prepare("SELECT DISTINCT volumeid FROM content_keys")
+        .prepare(
+            "SELECT DISTINCT volumeid FROM content_keys, content \
+             WHERE volumeid = contentid",
+        )
         .map_err(sqlite_err)?;
     let mut volumes: Vec<String> = stmt
         .query_map([], |row| row.get::<_, String>(0))
