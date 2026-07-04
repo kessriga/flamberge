@@ -133,8 +133,8 @@ fn parse_stream_body(mut dict: Dict, lex: &mut Lexer, doc: Option<&PdfDocument>)
     let length = match dict.get("Length") {
         Some(Object::Int(n)) if *n >= 0 => Some(*n as usize),
         Some(Object::Ref(objid, _)) => match doc {
-            Some(d) => d.get_object(*objid).ok().and_then(|o| match o {
-                Object::Int(n) if n >= 0 => Some(n as usize),
+            Some(d) => d.get_object(*objid).ok().and_then(|o| match o.as_ref() {
+                Object::Int(n) if *n >= 0 => Some(*n as usize),
                 _ => None,
             }),
             None => None,
@@ -219,12 +219,19 @@ fn resolve_shallow(obj: Object, doc: Option<&PdfDocument>) -> Object {
         Some(d) => d,
         None => return obj,
     };
+    // `resolve_shallow` targets tiny scalar/array values (/Length, /Filter,
+    // /DecodeParms), so cloning the resolved handle out of the `Rc` is cheap.
+    let deref = |objid| {
+        doc.get_object(objid)
+            .map(|o| (*o).clone())
+            .unwrap_or(Object::Null)
+    };
     match obj {
-        Object::Ref(objid, _) => doc.get_object(objid).unwrap_or(Object::Null),
+        Object::Ref(objid, _) => deref(objid),
         Object::Array(a) => Object::Array(
             a.into_iter()
                 .map(|x| match x {
-                    Object::Ref(objid, _) => doc.get_object(objid).unwrap_or(Object::Null),
+                    Object::Ref(objid, _) => deref(objid),
                     other => other,
                 })
                 .collect(),

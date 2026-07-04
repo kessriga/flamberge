@@ -62,8 +62,7 @@ pub(crate) fn ebx_license(doc: &PdfDocument) -> Result<EbxLicense> {
     let version = match doc
         .resolve(dict.get("V").unwrap_or(&Object::Null))
         .ok()
-        .as_ref()
-        .and_then(Object::as_int)
+        .and_then(|o| o.as_int())
     {
         Some(3) => 3,
         _ => 2,

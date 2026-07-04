@@ -12,6 +12,7 @@ use super::parser::{expect_int, object_from_token, parse_object};
 use crate::{FormatError, Result};
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 /// The unboxed per-object decipher: `(objid, genno, bytes) -> plaintext`.
 pub type DecipherFn = dyn Fn(u32, u16, &[u8]) -> Vec<u8>;
@@ -48,7 +49,7 @@ pub struct PdfDocument {
     pub(super) version: Vec<u8>,
     xrefs: Vec<XRef>,
     pub(super) trailer: Dict,
-    cache: RefCell<HashMap<u32, Object>>,
+    cache: RefCell<HashMap<u32, Rc<Object>>>,
     /// Parsed object streams, keyed by container id: `(N, flat member list)`.
     objstm_cache: RefCell<HashMap<u32, (usize, Vec<Object>)>>,
     /// Object ids currently being resolved — a re-entrancy guard against
@@ -140,24 +141,40 @@ impl PdfDocument {
     }
 
     /// Follow indirect references until a direct object is reached.
-    pub fn resolve(&self, obj: &Object) -> Result<Object> {
-        let mut cur = obj.clone();
+    ///
+    /// Returns a shared [`Rc<Object>`]: for an indirect reference this is the
+    /// cached handle (no deep copy of the target's body); for a direct input it
+    /// is a fresh `Rc` wrapping a clone of the (small, borrowed) argument.
+    pub fn resolve(&self, obj: &Object) -> Result<Rc<Object>> {
+        let mut objid = match obj {
+            Object::Ref(id, _) => *id,
+            _ => return Ok(Rc::new(obj.clone())),
+        };
         let mut guard = 0;
-        while let Object::Ref(objid, _) = cur {
-            cur = self.get_object(objid)?;
-            guard += 1;
-            if guard > 100 {
-                return Err(FormatError::Invalid("pdf: reference cycle".into()));
+        loop {
+            let cur = self.get_object(objid)?;
+            match cur.as_ref() {
+                Object::Ref(id, _) => {
+                    objid = *id;
+                    guard += 1;
+                    if guard > 100 {
+                        return Err(FormatError::Invalid("pdf: reference cycle".into()));
+                    }
+                }
+                _ => return Ok(cur),
             }
         }
-        Ok(cur)
     }
 
     /// Fetch (and cache) an object by id, resolving compressed objects from
     /// their object stream.
-    pub fn get_object(&self, objid: u32) -> Result<Object> {
+    ///
+    /// Returns a shared [`Rc<Object>`]: repeated fetches of the same id hand back
+    /// the same allocation (an `Rc` refcount bump), so a large stream's
+    /// `rawdata` body is never re-cloned per lookup.
+    pub fn get_object(&self, objid: u32) -> Result<Rc<Object>> {
         if let Some(obj) = self.cache.borrow().get(&objid) {
-            return Ok(obj.clone());
+            return Ok(Rc::clone(obj));
         }
         // Guard against a cross-reference entry that resolves (directly or via
         // an object-stream container) back to the object being resolved.
@@ -169,8 +186,8 @@ impl PdfDocument {
         }
         let built = self.build_object(objid);
         self.resolving.borrow_mut().remove(&objid);
-        let obj = built?;
-        self.cache.borrow_mut().insert(objid, obj.clone());
+        let obj = Rc::new(built?);
+        self.cache.borrow_mut().insert(objid, Rc::clone(&obj));
         Ok(obj)
     }
 
@@ -237,7 +254,7 @@ impl PdfDocument {
     fn parse_from_objstm(&self, stmid: u32, index: usize) -> Result<Object> {
         if !self.objstm_cache.borrow().contains_key(&stmid) {
             let container = self.get_object(stmid)?;
-            let stream = match &container {
+            let stream = match container.as_ref() {
                 Object::Stream(s) => s,
                 _ => {
                     return Err(FormatError::Invalid(format!(
@@ -756,6 +773,65 @@ mod tests {
         buf.extend_from_slice(b"\nendstream\nendobj\n");
         buf.extend_from_slice(format!("startxref\n{}\n%%EOF", obj2_off).as_bytes());
         buf
+    }
+
+    /// Build a classic-xref PDF whose object 4 is a large (uncompressed) stream,
+    /// so we can assert repeated fetches share one allocation.
+    fn build_large_stream_pdf() -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"%PDF-1.4\n");
+        let mut offsets = Vec::new();
+
+        offsets.push((1u32, buf.len()));
+        buf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+
+        offsets.push((2u32, buf.len()));
+        buf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+
+        offsets.push((3u32, buf.len()));
+        buf.extend_from_slice(
+            b"3 0 obj\n<< /Type /Page /Parent 2 0 R /Contents 4 0 R >>\nendobj\n",
+        );
+
+        // Object 4: a large stream body (no filter, so /Length is the raw size).
+        let body = vec![b'A'; 200_000];
+        offsets.push((4u32, buf.len()));
+        buf.extend_from_slice(
+            format!("4 0 obj\n<< /Length {} >>\nstream\n", body.len()).as_bytes(),
+        );
+        buf.extend_from_slice(&body);
+        buf.extend_from_slice(b"\nendstream\nendobj\n");
+
+        let xref_pos = buf.len();
+        buf.extend_from_slice(b"xref\n0 5\n");
+        buf.extend_from_slice(b"0000000000 65535 f \n");
+        for (_, off) in &offsets {
+            buf.extend_from_slice(format!("{:010} 00000 n \n", off).as_bytes());
+        }
+        buf.extend_from_slice(b"trailer\n<< /Size 5 /Root 1 0 R >>\n");
+        buf.extend_from_slice(format!("startxref\n{}\n%%EOF", xref_pos).as_bytes());
+        buf
+    }
+
+    #[test]
+    fn repeated_get_object_shares_one_allocation() {
+        let pdf = build_large_stream_pdf();
+        let doc = PdfDocument::parse(&pdf).unwrap();
+
+        // First fetch populates the cache; the second must hand back the *same*
+        // Rc allocation, not a deep copy of the 200 KB stream body.
+        let h1 = doc.get_object(4).unwrap();
+        let h2 = doc.get_object(4).unwrap();
+        assert!(
+            Rc::ptr_eq(&h1, &h2),
+            "repeated get_object should share one Rc<Object>, not re-clone rawdata"
+        );
+        // The shared handle is the large stream we built.
+        assert_eq!(h1.as_stream().unwrap().rawdata.len(), 200_000);
+
+        // resolve() through an indirect reference yields that same shared handle.
+        let via_ref = doc.resolve(&Object::Ref(4, 0)).unwrap();
+        assert!(Rc::ptr_eq(&h1, &via_ref));
     }
 
     #[test]
