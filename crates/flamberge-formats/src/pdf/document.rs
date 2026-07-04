@@ -10,8 +10,18 @@ use super::lexer::{Lexer, Token};
 use super::object::{Dict, Object};
 use super::parser::{expect_int, object_from_token, parse_object};
 use crate::{FormatError, Result};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
+
+/// The unboxed per-object decipher: `(objid, genno, bytes) -> plaintext`.
+pub type DecipherFn = dyn Fn(u32, u16, &[u8]) -> Vec<u8>;
+
+/// A per-object decipher hook.
+///
+/// Installed by the scheme layer via [`PdfDocument::set_decipher`] once the book
+/// key is recovered; it carries all the crypto (RC4/AES + the MD5 per-object key
+/// derivation). Symmetric ciphers make this the same closure for encrypt/decrypt.
+pub type Decipher = Box<DecipherFn>;
 
 /// One cross-reference entry: where object `objid` lives.
 #[derive(Clone, Debug)]
@@ -44,6 +54,11 @@ pub struct PdfDocument {
     /// Object ids currently being resolved — a re-entrancy guard against
     /// self- or mutually-referencing cross-reference entries in crafted files.
     resolving: RefCell<HashSet<u32>>,
+    /// Optional per-object decipher, installed via [`Self::set_decipher`].
+    decipher: RefCell<Option<Decipher>>,
+    /// The `/Encrypt` object id, skipped by the decipher (its strings are never
+    /// enciphered). `None` when `/Encrypt` is a direct dict or absent.
+    encrypt_skip: Cell<Option<u32>>,
 }
 
 impl std::fmt::Debug for PdfDocument {
@@ -69,9 +84,29 @@ impl PdfDocument {
             cache: RefCell::new(HashMap::new()),
             objstm_cache: RefCell::new(HashMap::new()),
             resolving: RefCell::new(HashSet::new()),
+            decipher: RefCell::new(None),
+            encrypt_skip: Cell::new(None),
         };
         doc.read_xrefs()?;
         Ok(doc)
+    }
+
+    /// Install a per-object [`Decipher`]: from now on, [`Self::get_object`]
+    /// deciphers each uncompressed object's string and stream bytes as it is
+    /// read (mirroring `ineptpdf`'s `getobj` + `decipher_all`).
+    ///
+    /// Clears the object caches so anything read before the decipher was
+    /// installed (e.g. while probing `/Encrypt`) is re-fetched as plaintext, and
+    /// records the `/Encrypt` object id so its own (unenciphered) strings are
+    /// left untouched.
+    pub fn set_decipher(&self, decipher: Decipher) {
+        self.cache.borrow_mut().clear();
+        self.objstm_cache.borrow_mut().clear();
+        self.encrypt_skip.set(match self.trailer.get("Encrypt") {
+            Some(Object::Ref(objid, _)) => Some(*objid),
+            _ => None,
+        });
+        *self.decipher.borrow_mut() = Some(decipher);
     }
 
     /// The union of all object ids reachable through the cross-reference chain.
@@ -181,10 +216,19 @@ impl PdfDocument {
                 )));
             }
         }
+        let genno = genno.max(0) as u16;
         let mut obj = parse_object(&mut lex, Some(self))?;
         if let Object::Stream(ref mut s) = obj {
             s.objid = objid;
-            s.genno = genno.max(0) as u16;
+            s.genno = genno;
+        }
+        // Decipher in place (uncompressed objects only; object-stream members are
+        // already covered by their deciphered container). The `/Encrypt` dict is
+        // never enciphered, so it is skipped.
+        if self.encrypt_skip.get() != Some(objid) {
+            if let Some(decipher) = self.decipher.borrow().as_ref() {
+                obj = decipher_all(decipher.as_ref(), objid, genno, obj);
+            }
         }
         Ok(obj)
     }
@@ -451,6 +495,35 @@ impl PdfDocument {
         // The xref stream's own dictionary is the trailer.
         xref.trailer = stream.dict;
         Ok(xref)
+    }
+}
+
+/// Recursively decipher an object's string/stream bytes with `f`.
+///
+/// Strings are deciphered directly; arrays and dictionaries are walked; a
+/// stream's *body* is deciphered but its dictionary is left as-is — matching
+/// `ineptpdf.decipher_all`, which returns a `PDFStream` unchanged and deciphers
+/// only its raw data lazily. `objid`/`genno` are the enclosing object's, as the
+/// PDF security handler keys every nested string to its top-level object.
+fn decipher_all(f: &DecipherFn, objid: u32, genno: u16, obj: Object) -> Object {
+    match obj {
+        Object::Str(bytes) => Object::Str(f(objid, genno, &bytes)),
+        Object::Array(items) => Object::Array(
+            items
+                .into_iter()
+                .map(|v| decipher_all(f, objid, genno, v))
+                .collect(),
+        ),
+        Object::Dict(dict) => Object::Dict(
+            dict.into_iter()
+                .map(|(k, v)| (k, decipher_all(f, objid, genno, v)))
+                .collect(),
+        ),
+        Object::Stream(mut s) => {
+            s.rawdata = f(objid, genno, &s.rawdata);
+            Object::Stream(s)
+        }
+        other => other,
     }
 }
 
