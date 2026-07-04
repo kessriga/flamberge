@@ -5,6 +5,7 @@
 //! Reference: `docs/DEDRM_SCHEMES.md`.
 
 pub mod adept;
+mod epub_common;
 pub mod ereader;
 pub mod error;
 pub mod ignoble;
