@@ -11,6 +11,9 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use quick_xml::events::Event;
+use quick_xml::reader::Reader;
+
 use crate::{KeyError, Result};
 
 /// A located Kobo library DB plus, when it came from a mounted device, that
@@ -24,6 +27,11 @@ pub(super) struct LocatedDb {
 /// (`<mount>/.kobo/KoboReader.sqlite`), then the desktop app
 /// (`.../Kobo Desktop Edition/Kobo.sqlite`). `NotFound` when neither exists.
 pub(super) fn find_kobo_db() -> Result<LocatedDb> {
+    // On Windows, probing drive letters D:–Z: would otherwise pop the OS
+    // critical-error dialog for an empty removable drive; suppress it first.
+    #[cfg(target_os = "windows")]
+    suppress_removable_drive_dialogs();
+
     for root in mount_roots() {
         let db = root.join(".kobo").join("KoboReader.sqlite");
         if db.is_file() {
@@ -92,11 +100,28 @@ fn mount_roots() -> Vec<PathBuf> {
     #[cfg(target_os = "windows")]
     {
         // Removable drives are unpredictable; probe drive letters D:..Z:.
+        // `find_kobo_db` first suppresses the empty-drive error dialog.
         for letter in b'D'..=b'Z' {
             roots.push(PathBuf::from(format!("{}:\\", letter as char)));
         }
     }
     roots
+}
+
+/// Prevent the Windows critical-error handler from popping a modal "There is no
+/// disk in the drive" dialog when [`find_kobo_db`] stats an empty removable
+/// drive. `SEM_FAILCRITICALERRORS` makes such failures return as errors instead.
+#[cfg(target_os = "windows")]
+fn suppress_removable_drive_dialogs() {
+    const SEM_FAILCRITICALERRORS: u32 = 0x0001;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn SetThreadErrorMode(new_mode: u32, old_mode: *mut u32) -> i32;
+    }
+    // Safety: a plain kernel32 call; null out-pointer, previous mode ignored.
+    unsafe {
+        SetThreadErrorMode(SEM_FAILCRITICALERRORS, std::ptr::null_mut());
+    }
 }
 
 /// Push each immediate subdirectory of `dir` onto `out` (best-effort).
@@ -118,41 +143,41 @@ pub(super) fn device_serial(root: &Path) -> Option<String> {
     parse_device_serial(&xml)
 }
 
-/// Extract the `deviceSerial` element text from a `device.xml`. Namespace- and
-/// attribute-agnostic: matches any tag whose local name is `deviceSerial`
-/// (obok matches on `"deviceSerial" in node.tag`).
+/// Extract the `deviceSerial` element text from a `device.xml`. Matches any
+/// element whose local name is `deviceSerial`, regardless of namespace prefix
+/// (obok matches on `"deviceSerial" in node.tag`). Uses `quick-xml`, as the
+/// sibling `adobe` module does, rather than hand-rolling a scanner.
 pub(super) fn parse_device_serial(xml: &str) -> Option<String> {
-    // Find an opening tag ending in `deviceSerial` and return its text content.
-    let mut search = xml;
-    while let Some(lt) = search.find('<') {
-        let after = &search[lt + 1..];
-        let gt = after.find('>')?;
-        let tag = &after[..gt];
-        // Skip closing tags / declarations / comments.
-        let name_end = tag
-            .find(|c: char| c.is_whitespace() || c == '/')
-            .unwrap_or(tag.len());
-        let name = &tag[..name_end];
-        if !tag.starts_with('/')
-            && !tag.starts_with('?')
-            && !tag.starts_with('!')
-            && local_name(name) == "deviceSerial"
-        {
-            let text = &after[gt + 1..];
-            let end = text.find('<')?;
-            let serial = text[..end].trim();
-            if !serial.is_empty() {
-                return Some(serial.to_string());
+    let mut reader = Reader::from_reader(xml.as_bytes());
+    let mut buf = Vec::new();
+    let mut capturing = false;
+    let mut serial = String::new();
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) if e.local_name().as_ref() == b"deviceSerial" => {
+                capturing = true;
+                serial.clear();
             }
+            Ok(Event::Text(ref e)) if capturing => {
+                if let Ok(chunk) = e.unescape() {
+                    serial.push_str(&chunk);
+                }
+            }
+            Ok(Event::CData(ref e)) if capturing => {
+                serial.push_str(&String::from_utf8_lossy(e));
+            }
+            Ok(Event::End(ref e)) if e.local_name().as_ref() == b"deviceSerial" => {
+                let trimmed = serial.trim();
+                if !trimmed.is_empty() {
+                    return Some(trimmed.to_string());
+                }
+                capturing = false;
+            }
+            Ok(Event::Eof) | Err(_) => return None,
+            _ => {}
         }
-        search = &after[gt..];
+        buf.clear();
     }
-    None
-}
-
-/// The local part of a possibly namespace-prefixed tag name (`adept:foo` → `foo`).
-fn local_name(name: &str) -> &str {
-    name.rsplit(':').next().unwrap_or(name)
 }
 
 /// Enumerate the host's NIC MAC addresses (upper-case, colon-separated) by
@@ -166,25 +191,46 @@ pub(super) fn enumerate_macaddrs() -> Vec<String> {
     }
 }
 
-/// Run the platform tool that prints NIC info and capture its stdout.
+/// Run the first available platform tool that prints NIC info and capture its
+/// stdout. Tries candidates in order so a host missing one tool still resolves
+/// (e.g. Linux with net-tools `ifconfig` but no iproute2 `ip`), mirroring obok's
+/// multiple fallbacks.
 fn macaddr_command() -> Option<String> {
-    #[cfg(target_os = "macos")]
-    let cmd = Command::new("/sbin/ifconfig").arg("-a").output();
-    #[cfg(target_os = "linux")]
-    let cmd = Command::new("ip").args(["-br", "link"]).output();
-    #[cfg(target_os = "windows")]
-    let cmd = Command::new("getmac").output();
-    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-    let cmd: std::io::Result<std::process::Output> = Err(std::io::Error::new(
-        std::io::ErrorKind::Other,
-        "unsupported",
-    ));
-
-    let out = cmd.ok()?;
-    if !out.status.success() {
-        return None;
+    for (bin, args) in candidate_nic_commands() {
+        if let Ok(out) = Command::new(bin).args(&args).output() {
+            if out.status.success() {
+                let text = String::from_utf8_lossy(&out.stdout).into_owned();
+                if !text.trim().is_empty() {
+                    return Some(text);
+                }
+            }
+        }
     }
-    Some(String::from_utf8_lossy(&out.stdout).into_owned())
+    None
+}
+
+/// Ordered NIC-listing commands to try for the current OS (first success wins).
+fn candidate_nic_commands() -> Vec<(&'static str, Vec<&'static str>)> {
+    #[cfg(target_os = "macos")]
+    {
+        vec![("/sbin/ifconfig", vec!["-a"])]
+    }
+    #[cfg(target_os = "linux")]
+    {
+        vec![
+            ("ip", vec!["-br", "link"]),
+            ("/sbin/ifconfig", vec!["-a"]),
+            ("ifconfig", vec!["-a"]),
+        ]
+    }
+    #[cfg(target_os = "windows")]
+    {
+        vec![("getmac", vec![])]
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        Vec::new()
+    }
 }
 
 /// Scan free-form NIC-tool output for 6-octet MAC addresses, normalising `-` to
@@ -284,5 +330,20 @@ A4-83-E7-1B-2C-3D   \\Device\\Tcpip_{GUID}";
     fn no_device_serial_returns_none() {
         let xml = "<deviceInfo><deviceName>Kobo</deviceName></deviceInfo>";
         assert_eq!(parse_device_serial(xml), None);
+    }
+
+    #[test]
+    fn ignores_device_serial_inside_a_comment() {
+        // A fake tag inside an XML comment must not be picked up as the serial.
+        let xml = "<deviceInfo><!-- <deviceSerial>FAKE</deviceSerial> -->\
+                   <deviceSerial>REAL123</deviceSerial></deviceInfo>";
+        assert_eq!(parse_device_serial(xml), Some("REAL123".to_string()));
+    }
+
+    #[test]
+    fn self_closing_device_serial_has_no_text() {
+        // A self-closing element carries no serial; the real one still wins.
+        let xml = "<deviceInfo><deviceSerial/><deviceSerial>REAL</deviceSerial></deviceInfo>";
+        assert_eq!(parse_device_serial(xml), Some("REAL".to_string()));
     }
 }

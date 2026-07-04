@@ -52,9 +52,12 @@ pub fn derive_userkeys(macaddrs_and_serials: &[String], userids: &[String]) -> V
 /// Returns [`KeyError::NotFound`] — never panics — when the DB is missing, has
 /// no `UserID`s, or no MAC addresses/serials are available (§9.2).
 pub fn discover_userkeys() -> Result<Vec<[u8; 16]>> {
-    let located = host::find_kobo_db()?;
+    let host::LocatedDb {
+        db_bytes,
+        device_root,
+    } = host::find_kobo_db()?;
 
-    let userids = db::read_userids(&located.db_bytes)?;
+    let userids = db::read_userids(db_bytes)?;
     if userids.is_empty() {
         return Err(KeyError::NotFound(
             "the Kobo database has no UserID rows".into(),
@@ -62,7 +65,7 @@ pub fn discover_userkeys() -> Result<Vec<[u8; 16]>> {
     }
 
     let mut macaddrs = host::enumerate_macaddrs();
-    if let Some(root) = &located.device_root {
+    if let Some(root) = &device_root {
         if let Some(serial) = host::device_serial(root) {
             macaddrs.push(serial);
         }
@@ -105,7 +108,7 @@ mod tests {
             .unwrap();
         }
         let db_bytes = std::fs::read(file.path()).unwrap();
-        let userids = db::read_userids(&db_bytes).unwrap();
+        let userids = db::read_userids(db_bytes).unwrap();
         assert!(!userids.is_empty());
 
         let macs = vec!["A4:83:E7:1B:2C:3D".to_string()];

@@ -1,11 +1,11 @@
 ---
 id: TASK-17
 title: Kobo key discovery (device + desktop app)
-status: In Progress
+status: Done
 assignee:
   - Kessriga Jeükal
 created_date: '2026-07-03 20:00'
-updated_date: '2026-07-04 18:53'
+updated_date: '2026-07-04 18:54'
 labels:
   - keys
   - kobo
@@ -39,8 +39,6 @@ Implement flamberge-keys::kobo::discover_userkeys: locate the Kobo library DB (d
 - [x] #5 Unit test drives derive inputs from a fixture DB and asserts a non-empty candidate set
 <!-- AC:END -->
 
-
-
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
@@ -66,6 +64,21 @@ Live device auto-mount scanning (obok takes an explicit device path; we probe th
 
 Reference: docs/DEDRM_SCHEMES.md §9.1–9.2; obok.py `KoboLibrary.__init__`/`__getmacaddrs`/`__getuserids`/`__getuserkeys`.
 <!-- SECTION:PLAN:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented `flamberge-keys::kobo::discover_userkeys` (§9.1–9.2), the on-host input-gathering feeding the existing `derive_userkeys`. Refactored `kobo.rs` into a `kobo/` module dir:
+
+- **`db.rs`** — `read_userids`: WAL-patch a temp DB copy (bytes 18–19 → `01 01`), open read-only, `SELECT UserID FROM user` (skipping NULL/empty). Duplicates the WAL trick from `schemes::kobo::db` because `keys` can't depend on `schemes`.
+- **`host.rs`** — `find_kobo_db` scans mount roots (`/Volumes`, `/media/$USER`, `/run/media/$USER`, `/mnt`, Windows drive letters) for a device `.kobo/KoboReader.sqlite`, else the per-OS desktop-app `Kobo.sqlite`; `enumerate_macaddrs` shells `ifconfig`/`ip`/`getmac`; `device_serial` reads the mounted device's `device.xml`. OS glue is thin; the parsing (`parse_macaddrs`, `parse_device_serial`) is pure + unit-tested.
+- **`mod.rs`** — orchestration; `NotFound` (never panics) on missing DB / no UserIDs / no MACs.
+- CLI `keys kobo` wired (was `bail!`).
+
+Verification: 11 kobo unit tests + full workspace suite (219 tests) pass; fmt/clippy clean; drove `keys kobo` on a Kobo-less host → clean `NotFound`, exit 1, no panic. All ACs + DoD met. CLAUDE.md status updated (Kobo discovery moved from stubbed to real). PR: https://github.com/kessriga/flamberge/pull/18
+
+Out of scope (documented): Linux full-filesystem walk for `Kobo.sqlite` (obok's last-resort fallback).
+<!-- SECTION:FINAL_SUMMARY:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->

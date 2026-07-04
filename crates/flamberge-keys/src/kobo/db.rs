@@ -4,8 +4,9 @@
 //! `-wal` file. Following `obok.py` (`KoboLibrary.__init__`), we patch the
 //! header of a copy (bytes 18–19 → `01 01`, forcing rollback-journal mode) and
 //! open that copy read-only from a temp file. Mirrors the identical trick in
-//! `flamberge-schemes::kobo::db`, duplicated here because `flamberge-keys`
-//! cannot depend on `flamberge-schemes` (dependency direction).
+//! `flamberge-schemes::kobo::db`; the two copies could be unified by hoisting
+//! the helper here (the dependency runs `keys ← schemes`, so `schemes` could
+//! call it) — left as a follow-up to avoid a cross-crate change on this task.
 //!
 //! Reference: `docs/DEDRM_SCHEMES.md` §9.1–9.2; obok `__getuserids`.
 
@@ -18,9 +19,11 @@ use crate::{KeyError, Result};
 /// Read every `UserID` from the `user` table of the Kobo DB `db_bytes`.
 ///
 /// Rows whose `UserID` is NULL or non-text are skipped (obok wraps the read in
-/// try/except for the same reason). The returned ids feed the key derivation in
-/// [`super::derive_userkeys`].
-pub(super) fn read_userids(db_bytes: &[u8]) -> Result<Vec<String>> {
+/// try/except for the same reason); empty-string ids are kept, matching obok's
+/// unconditional append. Takes `db_bytes` by value so the (potentially large)
+/// buffer is patched in place rather than copied. The returned ids feed the key
+/// derivation in [`super::derive_userkeys`].
+pub(super) fn read_userids(db_bytes: Vec<u8>) -> Result<Vec<String>> {
     // The temp file must outlive the connection; both are dropped at end of fn.
     let (_tmp, conn) = open_patched(db_bytes)?;
     let mut stmt = conn
@@ -30,23 +33,22 @@ pub(super) fn read_userids(db_bytes: &[u8]) -> Result<Vec<String>> {
         .query_map([], |row| row.get::<_, String>(0))
         .map_err(sqlite_err)?
         .filter_map(|r| r.ok())
-        .filter(|s| !s.is_empty())
         .collect();
     Ok(userids)
 }
 
-/// Write the WAL-patched DB bytes to a temp file and open it read-only.
-fn open_patched(db_bytes: &[u8]) -> Result<(tempfile::NamedTempFile, Connection)> {
-    let mut patched = db_bytes.to_vec();
+/// Write the WAL-patched DB bytes to a temp file and open it read-only. Consumes
+/// `db_bytes`, patching the header in place to avoid an extra full-size copy.
+fn open_patched(mut db_bytes: Vec<u8>) -> Result<(tempfile::NamedTempFile, Connection)> {
     // Force rollback-journal mode so SQLite opens the copy without a -wal file.
-    if patched.len() >= 20 {
-        patched[18] = 0x01;
-        patched[19] = 0x01;
+    if db_bytes.len() >= 20 {
+        db_bytes[18] = 0x01;
+        db_bytes[19] = 0x01;
     }
 
     let mut file = tempfile::NamedTempFile::new()
         .map_err(|e| KeyError::Invalid(format!("temp file for Kobo DB: {e}")))?;
-    file.write_all(&patched)
+    file.write_all(&db_bytes)
         .and_then(|()| file.as_file().sync_all())
         .map_err(|e| KeyError::Invalid(format!("writing Kobo DB copy: {e}")))?;
 
@@ -84,26 +86,25 @@ mod tests {
             "11111111-2222-3333-4444-555555555555",
             "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
         ]);
-        let ids = read_userids(&db).unwrap();
+        let ids = read_userids(db).unwrap();
         assert_eq!(ids.len(), 2);
         assert!(ids.contains(&"11111111-2222-3333-4444-555555555555".to_string()));
     }
 
     #[test]
-    fn skips_null_and_empty_userids() {
+    fn skips_null_userids_but_keeps_the_rest() {
+        // NULL rows are dropped (obok's try/except), but a real id is kept.
         let file = tempfile::NamedTempFile::new().unwrap();
         {
             let conn = Connection::open(file.path()).unwrap();
             conn.execute("CREATE TABLE user (UserID TEXT)", []).unwrap();
             conn.execute("INSERT INTO user (UserID) VALUES (NULL)", [])
                 .unwrap();
-            conn.execute("INSERT INTO user (UserID) VALUES ('')", [])
-                .unwrap();
             conn.execute("INSERT INTO user (UserID) VALUES ('real-id')", [])
                 .unwrap();
         }
         let db = std::fs::read(file.path()).unwrap();
-        let ids = read_userids(&db).unwrap();
+        let ids = read_userids(db).unwrap();
         assert_eq!(ids, vec!["real-id".to_string()]);
     }
 
@@ -115,6 +116,6 @@ mod tests {
             conn.execute("CREATE TABLE other (x TEXT)", []).unwrap();
         }
         let db = std::fs::read(file.path()).unwrap();
-        assert!(read_userids(&db).is_err());
+        assert!(read_userids(db).is_err());
     }
 }
