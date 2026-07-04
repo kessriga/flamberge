@@ -73,6 +73,10 @@ struct Voucher {
 /// the voucher until one unwraps it. A wrong PID fails the PKCS#7 check and the
 /// next candidate is tried (§3.3, `kfxdedrm.py::decrypt_voucher`).
 fn unwrap_voucher_with_candidates(envelope: &[u8], keys: &KeyStore) -> Result<Voucher> {
+    // Parse the (PID-independent) envelope once. A structural/parse failure here
+    // is a real error — surface it via `?` rather than letting the candidate loop
+    // mask it as `NoKeyWorked`, which would misdirect the user to hunt for a key.
+    let parsed = parse_voucher_envelope(envelope)?;
     for pid in candidate_pids(keys) {
         let bytes = pid.as_bytes();
         // Pick the first split whose lengths sum to this PID's length.
@@ -80,7 +84,7 @@ fn unwrap_voucher_with_candidates(envelope: &[u8], keys: &KeyStore) -> Result<Vo
             continue; // no documented split matches this PID length; skip it
         };
         let (dsn, secret) = bytes.split_at(dsn_len);
-        if let Ok(v) = unwrap_voucher(envelope, dsn, secret) {
+        if let Ok(v) = unwrap_with(&parsed, dsn, secret) {
             return Ok(v);
         }
     }
@@ -103,11 +107,24 @@ fn candidate_pids(keys: &KeyStore) -> Vec<String> {
     out
 }
 
-/// Parse a `VoucherEnvelope`, derive the KEK from `(dsn, secret)`, AES-256-CBC
-/// unwrap the inner voucher, and extract the 16-byte content key. Any parse,
-/// cipher, or padding failure returns `Err` — the caller treats that as "wrong
-/// PID, try the next". Port of `DrmIonVoucher.parse`/`decryptvoucher` (§3.3).
-fn unwrap_voucher(envelope: &[u8], dsn: &[u8], secret: &[u8]) -> Result<Voucher> {
+/// The PID-independent contents of a `VoucherEnvelope`: everything needed to
+/// derive the KEK and unwrap the inner voucher once a `(dsn, secret)` is chosen.
+struct ParsedVoucher {
+    version: i64,
+    enc_algorithm: String,
+    enc_transformation: String,
+    hash_algorithm: String,
+    /// Lock parameters (`ACCOUNT_SECRET` / `CLIENT_ID`), pre-sorted (§3.3).
+    lock_parameters: Vec<String>,
+    cipher_iv: Vec<u8>,
+    cipher_text: Vec<u8>,
+    license_type: String,
+}
+
+/// Parse a `VoucherEnvelope` struct and its inner voucher (PID-independent). A
+/// malformed envelope surfaces here as a real error rather than being masked as
+/// "wrong PID". Port of `DrmIonVoucher.parse`/`parsevoucher` (§3.3).
+fn parse_voucher_envelope(envelope: &[u8]) -> Result<ParsedVoucher> {
     let mut env = new_parser(envelope);
     env.reset();
 
@@ -164,12 +181,36 @@ fn unwrap_voucher(envelope: &[u8], dsn: &[u8], secret: &[u8]) -> Result<Voucher>
 
     let inner_voucher = inner_voucher.ok_or_else(|| invalid("voucher envelope has no voucher"))?;
     let (cipher_iv, cipher_text, license_type) = parse_inner_voucher(&inner_voucher)?;
-
-    // Build the shared secret, obfuscate it, and derive the AES-256 KEK (§3.3).
-    let mut shared =
-        format!("PIDv3{enc_algorithm}{enc_transformation}{hash_algorithm}").into_bytes();
+    if cipher_iv.len() < 16 {
+        return Err(invalid("voucher cipher_iv is shorter than 16 bytes"));
+    }
     lock_parameters.sort();
-    for param in &lock_parameters {
+
+    Ok(ParsedVoucher {
+        version,
+        enc_algorithm,
+        enc_transformation,
+        hash_algorithm,
+        lock_parameters,
+        cipher_iv,
+        cipher_text,
+        license_type,
+    })
+}
+
+/// Derive the KEK from `(dsn, secret)`, AES-256-CBC unwrap the voucher, and
+/// extract the 16-byte content key. A wrong PID fails the PKCS#7 check here, so
+/// the caller treats `Err` as "try the next candidate". Port of
+/// `DrmIonVoucher.decryptvoucher` (§3.3).
+fn unwrap_with(pv: &ParsedVoucher, dsn: &[u8], secret: &[u8]) -> Result<Voucher> {
+    // Build the shared secret from the sorted lock parameters, obfuscate it, and
+    // derive the AES-256 KEK (§3.3).
+    let mut shared = format!(
+        "PIDv3{}{}{}",
+        pv.enc_algorithm, pv.enc_transformation, pv.hash_algorithm
+    )
+    .into_bytes();
+    for param in &pv.lock_parameters {
         match param.as_str() {
             "ACCOUNT_SECRET" => {
                 shared.extend_from_slice(b"ACCOUNT_SECRET");
@@ -183,20 +224,24 @@ fn unwrap_voucher(envelope: &[u8], dsn: &[u8], secret: &[u8]) -> Result<Voucher>
         }
     }
 
-    let shared_secret = obfuscate(&shared, version)?;
+    let shared_secret = obfuscate(&shared, pv.version)?;
     let kek = kdf::hmac_sha256(&shared_secret, b"PIDv3");
-    if cipher_iv.len() < 16 {
-        return Err(invalid("voucher cipher_iv is shorter than 16 bytes"));
-    }
     // AES-256-CBC (32-byte KEK), then strip PKCS#7. A wrong PID surfaces here.
-    let plain = aes::cbc_decrypt(&kek, &cipher_iv[..16], &cipher_text)?;
+    let plain = aes::cbc_decrypt(&kek, &pv.cipher_iv[..16], &pv.cipher_text)?;
     let plain = kdf::pkcs7_unpad(&plain, 16)?;
 
     let content_key = extract_content_key(&plain)?;
     Ok(Voucher {
         content_key,
-        license_type,
+        license_type: pv.license_type.clone(),
     })
+}
+
+/// Test-only combiner: parse the envelope then unwrap it with a single
+/// `(dsn, secret)` pair.
+#[cfg(test)]
+fn unwrap_voucher(envelope: &[u8], dsn: &[u8], secret: &[u8]) -> Result<Voucher> {
+    unwrap_with(&parse_voucher_envelope(envelope)?, dsn, secret)
 }
 
 /// Parse the inner `com.amazon.drm.Voucher@1.0` struct into
@@ -902,6 +947,23 @@ mod tests {
         };
         let v = unwrap_voucher_with_candidates(&envelope, &keys).unwrap();
         assert_eq!(v.content_key, key);
+    }
+
+    #[test]
+    fn malformed_voucher_surfaces_real_error_not_no_key_worked() {
+        // A syntactically-valid ION stream that is not a VoucherEnvelope: the
+        // structural failure must surface, not be masked as NoKeyWorked (which
+        // would send the user hunting for a key that would never work).
+        let bogus = ion_doc(e_posint(42));
+        let keys = KeyStore {
+            pids: vec!["0123456789abcdef".to_string()],
+            ..KeyStore::default()
+        };
+        match unwrap_voucher_with_candidates(&bogus, &keys) {
+            Err(SchemeError::NoKeyWorked) => panic!("structural error masked as NoKeyWorked"),
+            Err(_) => {}
+            Ok(_) => panic!("expected an error for a non-voucher stream"),
+        }
     }
 
     #[test]

@@ -45,22 +45,30 @@ impl KfxZip {
                 .by_index(i)
                 .map_err(|e| zip_error("read member", e))?;
             let name = member.name().to_owned();
-            let mut bytes = Vec::with_capacity(member.size() as usize);
-            member.read_to_end(&mut bytes)?;
+
+            // Peek only the leading magic before committing to inflate the whole
+            // member: members we don't care about are skipped without being fully
+            // decompressed, and we never pre-allocate from the untrusted
+            // uncompressed-size in the zip header.
+            let mut bytes = Vec::new();
+            (&mut member)
+                .take(DRMION_MAGIC.len() as u64)
+                .read_to_end(&mut bytes)?;
 
             if bytes.starts_with(DRMION_MAGIC) {
-                if bytes.len() < DRMION_MAGIC.len() + 8 {
-                    return Err(FormatError::Invalid(format!(
-                        "DRMION member {name} is too short to strip 8+8 bytes"
-                    )));
+                member.read_to_end(&mut bytes)?;
+                // A real DRMION member wraps the ION payload in an 8-byte prefix
+                // and suffix; anything shorter carries no payload, so skip it
+                // (leaving `decrypt` to fall through rather than hard-erroring).
+                if bytes.len() >= DRMION_MAGIC.len() + 8 {
+                    let payload = bytes[8..bytes.len() - 8].to_vec();
+                    out.drmion_members.push((name, payload));
                 }
-                let payload = bytes[8..bytes.len() - 8].to_vec();
-                out.drmion_members.push((name, payload));
-            } else if bytes.starts_with(ION_BVM)
-                && out.voucher.is_none()
-                && contains_subslice(&bytes, VOUCHER_SENTINEL)
-            {
-                out.voucher = Some(bytes);
+            } else if out.voucher.is_none() && bytes.starts_with(ION_BVM) {
+                member.read_to_end(&mut bytes)?;
+                if contains_subslice(&bytes, VOUCHER_SENTINEL) {
+                    out.voucher = Some(bytes);
+                }
             }
         }
 
@@ -86,8 +94,10 @@ pub fn repackage(original: &[u8], replacements: &BTreeMap<String, Vec<u8>>) -> R
                 .to_owned();
 
             if let Some(bytes) = replacements.get(&name) {
+                // Decrypted page content is highly compressible text; deflate it
+                // rather than storing it raw so the rebuilt archive stays small.
                 let options =
-                    SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+                    SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
                 writer
                     .start_file(name, options)
                     .map_err(|e| zip_error("start member", e))?;
@@ -206,10 +216,15 @@ mod tests {
     }
 
     #[test]
-    fn drmion_member_too_short_is_rejected() {
+    fn drmion_member_too_short_is_ignored() {
+        // Has the 8-byte magic but no room for an 8-byte suffix: not a usable
+        // DRMION member, so it is skipped (not a hard error) to let scheme
+        // dispatch fall through.
         let mut short = DRMION_MAGIC.to_vec();
-        short.extend_from_slice(b"1234"); // < 8-byte suffix available
+        short.extend_from_slice(b"1234");
         let zip = build_zip(&[("s.drmion", short)]);
-        assert!(KfxZip::parse(&zip).is_err());
+        let parsed = KfxZip::parse(&zip).unwrap();
+        assert!(parsed.drmion_members.is_empty());
+        assert!(parsed.voucher.is_none());
     }
 }
