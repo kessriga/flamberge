@@ -12,4 +12,8 @@ flamberge-crypto.workspace = true
 flamberge-formats.workspace = true
 flamberge-keys.workspace = true
 flate2.workspace = true
+lzma-rs.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+zip.workspace = true
