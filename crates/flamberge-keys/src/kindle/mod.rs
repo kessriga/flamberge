@@ -10,8 +10,10 @@
 //! `CryptUnprotectData` with the user's profile and cannot run offline;
 //! gathering the machine values ([`extract_local_keys`]) is likewise host-bound.
 
+pub mod kinf;
 pub mod obfuscation;
 
+pub use kinf::{decrypt_kinf, decrypt_kinf_candidates};
 pub use obfuscation::Platform;
 
 use crate::{KeyError, Result};
