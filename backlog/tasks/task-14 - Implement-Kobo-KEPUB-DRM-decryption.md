@@ -1,9 +1,11 @@
 ---
 id: TASK-14
 title: Implement Kobo (KEPUB) DRM decryption
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - Kessriga Jeükal
 created_date: '2026-07-03 19:59'
+updated_date: '2026-07-04 11:18'
 labels:
   - schemes
   - kobo
@@ -33,6 +35,24 @@ Implement flamberge-schemes::kobo. Read per-file page keys from the Kobo SQLite 
 - [ ] #4 Output is a repackaged EPUB; a book with no working key fails clearly
 - [ ] #5 Integration test decrypts a synthesized KEPUB + minimal SQLite DB with a derive_userkeys candidate and asserts content
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+## Approach (§9, obok.py)
+
+**Interface gap:** per-file page keys live in the external Kobo SQLite DB, not in the book or the user-key set. Thread the DB into the scheme via new `KeyStore` fields.
+
+1. **Deps:** add `rusqlite` (features=["bundled"]) + `tempfile` to workspace + `flamberge-schemes`. Add `aes::ecb_encrypt` to `flamberge-crypto` (round-trip partner, needed by tests; mirrors the DES ecb_encrypt partner). Separate commit.
+2. **KeyStore** (`flamberge-keys`): add `kobo_db: Option<Vec<u8>>` (raw sqlite bytes) and `kobo_volumeid: Option<String>`.
+3. **Scheme** — convert `kobo.rs` → `kobo/` dir (module-per-concern, like `ereader/`):
+   - `db.rs`: WAL header patch (bytes 18–19 → 01 01) on a temp copy, open with rusqlite read-only, query `SELECT elementid, elementkey FROM content_keys, content WHERE volumeid=?1 AND volumeid=contentid`, base64-decode elementkey → `Vec<{elementid, wrapped}>`. volumeid = provided or the single distinct volume in the DB (else clear error). Also fetch volume Title for output naming.
+   - `content.rs`: `page_key = AES-ECB-dec(user_key, wrapped)` → `plain = AES-ECB-dec(page_key, contents)` → strip CMS/PKCS#7 padding (faithful port of `__removeaespadding`). `check()` by elementid extension: xhtml/html/xml → first 5 chars printable ASCII after BOM; jpg/jpeg → FF D8 FF; else unchecked.
+   - `mod.rs`: detect zip magic (else NotThisScheme); require `kobo_db` (else clear error); read members via `ocf::read_all_members`; per candidate `keys.kobo_keys`: decrypt each encrypted member + `check()`; accept the key where no checkable file fails; repackage via `ocf::repackage` (mimetype-first stored + deflate rest) → `.epub`.
+4. **CLI:** `--kobo-db <path>`, `--kobo-volumeid <id>`, `--kobo-key <32hex>` (repeatable).
+5. **Tests:** unit (padding strip, check sniffing, single-file 2-layer round-trip) + integration (synth kepub zip + synth sqlite DB, key from `derive_userkeys`, decrypt → assert plaintext + repackaged epub). "No working key" → `NoKeyWorked`.
+6. Verify build/test/clippy/fmt; update CLAUDE.md Status; PR.
+<!-- SECTION:PLAN:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
