@@ -1,11 +1,11 @@
 ---
 id: TASK-15
 title: Kindle key extraction (.k4i / .kinf / Android)
-status: In Progress
+status: Done
 assignee:
   - Kessriga Jeükal
 created_date: '2026-07-03 19:59'
-updated_date: '2026-07-04 15:41'
+updated_date: '2026-07-04 16:05'
 labels:
   - keys
   - kindle
@@ -16,7 +16,19 @@ references:
   - ../../external/DeDRM_tools/DeDRM_plugin/kindlekey.py
   - ../../external/DeDRM_tools/DeDRM_plugin/androidkindlekey.py
 modified_files:
-  - crates/flamberge-keys/src/kindle.rs
+  - Cargo.toml
+  - crates/flamberge-crypto/src/des.rs
+  - crates/flamberge-keys/Cargo.toml
+  - crates/flamberge-keys/src/lib.rs
+  - crates/flamberge-keys/src/pid.rs
+  - crates/flamberge-keys/src/kindle/mod.rs
+  - crates/flamberge-keys/src/kindle/obfuscation.rs
+  - crates/flamberge-keys/src/kindle/kinf.rs
+  - crates/flamberge-keys/src/kindle/k4i.rs
+  - crates/flamberge-keys/src/kindle/android.rs
+  - crates/flamberge-schemes/src/mobipocket.rs
+  - crates/flamberge-schemes/src/topaz.rs
+  - crates/flamberge-cli/src/main.rs
 priority: low
 ordinal: 15000
 ---
@@ -31,11 +43,11 @@ Spec: docs/DEDRM_SCHEMES.md §6. Original: kindlekey.py, androidkindlekey.py.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 .k4i JSON databases load into the KeyStore; .kinf record framing + symbol/rotation decode is implemented
-- [ ] #2 Offline .kinf paths (macOS v5 emulated DPAPI, v6 GCM-as-CTR) decrypt values; Windows v5 DPAPI is feature-gated and returns a clear Unsupported error when unavailable
-- [ ] #3 Android serials are extracted from backup.ab, AmazonSecureStorage.xml (V1/V2 obfuscation), and map_data_storage.db
-- [ ] #4 Extracted serials/DBs expand the candidate PID list used by the Kindle schemes
-- [ ] #5 Unit tests cover the symbol map encode/decode, prime rotation, and v6 value decryption with a synthesized record
+- [x] #1 .k4i JSON databases load into the KeyStore; .kinf record framing + symbol/rotation decode is implemented
+- [x] #2 Offline .kinf paths (macOS v5 emulated DPAPI, v6 GCM-as-CTR) decrypt values; Windows v5 DPAPI is feature-gated and returns a clear Unsupported error when unavailable
+- [x] #3 Android serials are extracted from backup.ab, AmazonSecureStorage.xml (V1/V2 obfuscation), and map_data_storage.db
+- [x] #4 Extracted serials/DBs expand the candidate PID list used by the Kindle schemes
+- [x] #5 Unit tests cover the symbol map encode/decode, prime rotation, and v6 value decryption with a synthesized record
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -80,12 +92,40 @@ encode/decode round-trip; `primes`/largest-prime + rotation invert; v6 value dec
 Windows v5 DPAPI + live Windows/macOS machine-value gathering are inherently host-specific (per gotchas); the offline crypto core is what's tested. eInk serial→PID (§6.5) already exists in `pid.rs`.
 <!-- SECTION:PLAN:END -->
 
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Deviations from plan: (1) colocated each submodule's tests beside it (per CLAUDE.md convention) rather than a separate tests.rs; (2) did not wire DB-derived PIDs into kfx::candidate_pids — KFX has no EXTH-209 record and unwraps its voucher via a DSN/secret split, so getK4Pids doesn't cleanly apply; Android-derived serials still reach KFX via keys.serials. (3) added tempfile to keys deps to materialize the tar-embedded SQLite DB for rusqlite.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented `flamberge-keys::kindle` (spec §6), the offline Kindle key extraction, and wired the results into the Kindle schemes and CLI.
+
+**What's real (offline, reproducible + tested):**
+- `kindle/obfuscation.rs` — the shared `.kinf` anti-tamper layer: `decode` (inverse of `pid::encode`), `largest_prime`/`derotate` record rotation, and the per-platform 64-byte char maps (PC vs Mac) behind a `Platform` selector.
+- `kindle/kinf.rs` — `.kinf2011`/`.kinf2018` container decryption (`decrypt_kinf` / `decrypt_kinf_candidates`): split `/`-joined records, decode+AES-unprotect the header for `[Version][Build][Guid]`, walk each key record (name hash → count → de-rotate → testMap8 decode), then decrypt by version — **macOS v5 emulated DPAPI** (PBKDF2 + AES-256-CBC) and **v6 GCM-as-CTR** on both platforms. Windows v5 DPAPI returns `KeyError::Unsupported`. Verified by synthesized-record round-trips for both offline versions.
+- `kindle/k4i.rs` — `.k4i` JSON DB loader (flat name→hex map).
+- `kindle/android.rs` — `serials_from_android`: `AmazonSecureStorage.xml` (V1 AES-128-ECB / V2 DES-CBC obfuscation on keys+values), `map_data_storage.db` (SQLite), and `backup.ab` (24-byte ANDROID BACKUP header → zlib → tar, recursing into the two inner files).
+
+**AC4 wiring:** `pid::k4_pids` ports `getK4Pids` (DSN from an explicit key or reconstructed from MazamaRandomNumber+serial+username; device PID + primary + 2 variant book PIDs). New `KeyStore::kindle_dbs` feeds DB-derived PIDs into `mobipocket::normalize_pids` and `topaz::candidate_pids`; Android serials already flow via `keys.serials`.
+
+**Supporting:** added `des::cbc_encrypt` (round-trip partner, needed by the V2 lookup); CLI `decrypt --k4i` / `--android` flags load keys into the store (smoke-tested end-to-end).
+
+**Still stubbed (out of scope — host-specific):** `kindle::extract_local_keys` (gathering `$USER`/ioreg/volume-serial off the live machine) and Windows v5 real DPAPI. These need the user's actual OS profile and aren't reproducible offline.
+
+**Verification:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` (196 tests) all green. New tests cover encode/decode + char maps, largest-prime/rotation, v6 and v5-Mac synthesized `.kinf` decryption, wrong-IDString failure + candidate selection, Windows-v5 Unsupported, k4i parsing, Android V1/V2 obfuscation + SQLite + backup.ab, `k4_pids` shapes, and a scheme-level test that a `kindle_db` expands the candidate PID list.
+
+Commits: `f47b009` obfuscation · `370cd84` kinf v5/v6 · `77f805f` k4i · `769c402` des cbc_encrypt · `7185df5` android · `253c878` k4_pids + scheme wiring · `b7fa6c9` CLI flags · `d9b348b` CLAUDE.md.
+<!-- SECTION:FINAL_SUMMARY:END -->
+
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 cargo build succeeds with no warnings
-- [ ] #2 cargo test passes (unit and integration)
-- [ ] #3 cargo clippy passes with no warnings
-- [ ] #4 no panic!/unwrap/expect on non-test code paths
-- [ ] #5 behavior matches docs/DEDRM_SCHEMES.md and code cites the relevant section
-- [ ] #6 public items have doc comments
+- [x] #1 cargo build succeeds with no warnings
+- [x] #2 cargo test passes (unit and integration)
+- [x] #3 cargo clippy passes with no warnings
+- [x] #4 no panic!/unwrap/expect on non-test code paths
+- [x] #5 behavior matches docs/DEDRM_SCHEMES.md and code cites the relevant section
+- [x] #6 public items have doc comments
 <!-- DOD:END -->
