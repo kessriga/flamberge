@@ -157,3 +157,22 @@ fn non_zip_input_falls_through() {
         Err(SchemeError::NotThisScheme)
     ));
 }
+
+#[test]
+fn routes_kepub_epub_and_extensionless_via_db_signal() {
+    let candidates = candidate_keys();
+    let (kepub, sqlite) = fixture(&candidates[0]);
+
+    let mut keys = KeyStore::new();
+    keys.kobo_keys = candidates;
+    keys.kobo_db = Some(sqlite);
+
+    // A real Kobo book named `*.kepub.epub` presents extension `epub`, and an
+    // extension-less volume id presents `""`; both must reach the Kobo handler
+    // via the top-level dispatcher because a Kobo DB was supplied.
+    for ext in ["epub", ""] {
+        let book = crate::decrypt(&kepub, ext, &keys).unwrap();
+        assert_eq!(book.extension, "epub");
+        assert_eq!(member(&book.data, XHTML_PATH), XHTML_PLAIN);
+    }
+}
