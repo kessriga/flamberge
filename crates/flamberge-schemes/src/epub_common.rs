@@ -34,7 +34,7 @@ pub(crate) fn decrypt_member(book_key: &[u8; 16], data: &[u8]) -> Result<Vec<u8>
 /// Raw DEFLATE inflate (RFC 1951, zlib `windowBits = -15`). Returns `None` on any
 /// error so the caller passes the bytes through unchanged, matching the reference
 /// `decompress`'s bare `except: return bytes`.
-fn raw_inflate(data: &[u8]) -> Option<Vec<u8>> {
+pub(crate) fn raw_inflate(data: &[u8]) -> Option<Vec<u8>> {
     let mut out = Vec::new();
     flate2::read::DeflateDecoder::new(data)
         .read_to_end(&mut out)

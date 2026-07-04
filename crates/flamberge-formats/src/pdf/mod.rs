@@ -14,9 +14,11 @@
 //! - [`serializer`] — [`PdfSerializer`]: re-emit a clean PDF (classic xref,
 //!   generation numbers forced to 0, `/Encrypt` dropped).
 //!
-//! Decryption is intentionally **out of scope** here (see TASK-12): the
-//! `/Encrypt` dict and `/ID` are exposed for the scheme layer, which deciphers
-//! each object's stream/string bytes with an MD5-derived per-object key.
+//! The *crypto* is intentionally out of scope here: the `/Encrypt` dict and
+//! `/ID` are exposed for the scheme layer, which supplies a [`Decipher`] closure
+//! (an MD5-derived per-object RC4/AES key) via [`PdfDocument::set_decipher`].
+//! This module only provides the plumbing that walks each uncompressed object
+//! and applies that closure to its string/stream bytes.
 //!
 //! Where `ineptpdf.py` streams bytes through a buffer-refilling `PSBaseParser`
 //! (a workaround for Python file I/O), this port keeps the whole document in a
@@ -31,7 +33,7 @@ mod object;
 mod parser;
 mod serializer;
 
-pub use document::PdfDocument;
+pub use document::{Decipher, PdfDocument};
 pub use object::{Dict, Object, PdfStream};
 pub use serializer::PdfSerializer;
 

@@ -9,9 +9,10 @@ use std::collections::BTreeMap;
 
 use flamberge_crypto::rsa;
 use flamberge_formats::ocf::{self, EpubScheme, OcfEncryption};
+use flamberge_formats::pdf::PdfDocument;
 
 use crate::epub_common::{decode_b64, decrypt_member};
-use crate::{DecryptedBook, KeyStore, Result, SchemeError};
+use crate::{pdf_common, DecryptedBook, KeyStore, Result, SchemeError};
 
 /// Remove Adobe ADEPT DRM from an EPUB: RSA-unwrap the book key with a candidate
 /// user key, AES-decrypt + inflate each encrypted member, and repackage the OCF.
@@ -55,9 +56,31 @@ pub fn decrypt_epub(input: &[u8], keys: &KeyStore) -> Result<DecryptedBook> {
     })
 }
 
-/// PDF ADEPT (§7.4, EBX_HANDLER) — pending the PDF tokenizer (TASK-11/12).
-pub fn decrypt_pdf(_input: &[u8], _keys: &KeyStore) -> Result<DecryptedBook> {
-    Err(SchemeError::Unimplemented("adept::decrypt_pdf"))
+/// Remove Adobe ADEPT DRM from a PDF (§7.4, `EBX_HANDLER`): recover the book key
+/// from the `/Encrypt` `ADEPT_LICENSE` (base64 → inflate → adept XML →
+/// RSA-unwrap), RC4-decipher every object, and re-emit a clean PDF.
+///
+/// Returns [`SchemeError::NotThisScheme`] for non-PDF input, non-EBX handlers, or
+/// a B&N-shaped (48-byte AES) license — the last so `.pdf` dispatch falls through
+/// to [`crate::ignoble::decrypt_pdf`] — and [`SchemeError::NoKeyWorked`] when no
+/// supplied ADEPT key unwraps the book key.
+pub fn decrypt_pdf(input: &[u8], keys: &KeyStore) -> Result<DecryptedBook> {
+    if !input.starts_with(b"%PDF") {
+        return Err(SchemeError::NotThisScheme);
+    }
+    let doc = PdfDocument::parse(input)?;
+    let license = pdf_common::ebx_license(&doc)?;
+    // A 48-byte (zero-IV AES) wrapped key is B&N's, not ADEPT's RSA block.
+    if license.wrapped.len() == pdf_common::BN_WRAPPED_LEN {
+        return Err(SchemeError::NotThisScheme);
+    }
+    let book_key = recover_book_key(&license.wrapped, keys)?;
+    let data = pdf_common::decrypt_to_clean_pdf(&doc, book_key, license.version)?;
+    Ok(DecryptedBook {
+        data,
+        extension: "pdf".to_string(),
+        title: None,
+    })
 }
 
 /// Try each candidate ADEPT user key (a PKCS#1 RSA DER) until one unwraps the
@@ -98,11 +121,20 @@ mod tests {
     use ::rsa::{BigUint, RsaPrivateKey};
     use base64::Engine;
     use flamberge_crypto::aes;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
     use zip::write::SimpleFileOptions;
     use zip::{CompressionMethod, ZipWriter};
 
     const ADEPT_NS: &str = "http://ns.adobe.com/adept";
     const ENC_NS: &str = "http://www.w3.org/2001/04/xmlenc#";
+
+    /// A reproducible RSA key source. Seeding per call site keeps keygen — and so
+    /// the wrong-key `[-17]` separator check — deterministic rather than ~1/256
+    /// flaky, while distinct seeds still yield genuinely independent keys.
+    fn seeded_rng(seed: u64) -> StdRng {
+        StdRng::seed_from_u64(seed)
+    }
 
     // --- crypto helpers mirroring what a real ADEPT packager does ---
 
@@ -205,7 +237,7 @@ mod tests {
     /// with one deflated and one stored encrypted member. Returns
     /// `(der, epub_bytes, chapter_plaintext, css_plaintext)`.
     fn synth_adept_epub(content_key: [u8; 16]) -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
-        let mut rng = rand::thread_rng();
+        let mut rng = seeded_rng(1);
         let key = RsaPrivateKey::new(&mut rng, 1024).expect("keygen");
         let der = key.to_pkcs1_der().unwrap().as_bytes().to_vec();
 
@@ -257,7 +289,7 @@ mod tests {
 
     #[test]
     fn unwrap_book_key_applies_minus17_rule() {
-        let mut rng = rand::thread_rng();
+        let mut rng = seeded_rng(2);
         let key = RsaPrivateKey::new(&mut rng, 1024).unwrap();
         let der = key.to_pkcs1_der().unwrap().as_bytes().to_vec();
         let content_key = [0x42u8; 16];
@@ -270,7 +302,7 @@ mod tests {
     fn unwrap_book_key_wrong_key_is_none_not_error() {
         // Two independent keys: wrapping with A, unwrapping with B yields a block
         // whose [-17] byte is (almost surely) not 0x00 => wrong-key signal.
-        let mut rng = rand::thread_rng();
+        let mut rng = seeded_rng(3);
         let key_a = RsaPrivateKey::new(&mut rng, 1024).unwrap();
         let key_b = RsaPrivateKey::new(&mut rng, 1024).unwrap();
         let der_b = key_b.to_pkcs1_der().unwrap().as_bytes().to_vec();
@@ -326,7 +358,7 @@ mod tests {
     #[test]
     fn wrong_key_reports_no_key_worked() {
         let (_der, epub, _c, _s) = synth_adept_epub([0x01u8; 16]);
-        let mut rng = rand::thread_rng();
+        let mut rng = seeded_rng(4);
         let other = RsaPrivateKey::new(&mut rng, 1024).unwrap();
         let keys = KeyStore {
             adept_keys: vec![other.to_pkcs1_der().unwrap().as_bytes().to_vec()],
