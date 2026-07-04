@@ -38,6 +38,13 @@ pub struct KeyStore {
     pub ereader_keys: Vec<[u8; 8]>,
     /// Kobo candidate user keys (16-byte AES keys).
     pub kobo_keys: Vec<[u8; 16]>,
+    /// Raw bytes of the Kobo library SQLite DB (`KoboReader.sqlite` /
+    /// `Kobo.sqlite`). Unlike other schemes, the Kobo per-file wrapped page keys
+    /// live outside the book, in this DB (§9.3); the scheme reads them from here.
+    pub kobo_db: Option<Vec<u8>>,
+    /// Which Kobo volume (book) the input corresponds to. When `None` and the DB
+    /// holds exactly one volume, that volume is used.
+    pub kobo_volumeid: Option<String>,
 }
 
 impl KeyStore {

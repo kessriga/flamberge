@@ -80,12 +80,28 @@ pub fn kindle_scheme_from_magic(data: &[u8]) -> Option<Scheme> {
 /// Decrypt `input` given its file extension and a key store, trying each
 /// candidate scheme until one succeeds.
 pub fn decrypt(input: &[u8], ext: &str, keys: &KeyStore) -> Result<DecryptedBook> {
-    let candidates = candidates_for_extension(ext);
+    let mut candidates = candidates_for_extension(ext).to_vec();
+
+    // Real Kobo books are named `*.kepub.epub` (extension `epub`) or an
+    // extension-less volume id, so they would otherwise route to the EPUB
+    // schemes — or nowhere — and never reach the Kobo handler. A supplied Kobo
+    // DB is the unambiguous "this is a Kobo book" signal, so for a ZIP input we
+    // append Kobo as a fallback candidate (tried after any EPUB schemes, and not
+    // for Kindle-family archives like `.kfx-zip`, which have their own routing).
+    let is_zip = input.starts_with(b"PK\x03\x04");
+    let is_kindle_family = candidates
+        .iter()
+        .any(|s| matches!(s, Scheme::Mobipocket | Scheme::Topaz | Scheme::Kfx));
+    if keys.kobo_db.is_some() && is_zip && !is_kindle_family && !candidates.contains(&Scheme::Kobo)
+    {
+        candidates.push(Scheme::Kobo);
+    }
+
     if candidates.is_empty() {
         return Err(SchemeError::UnknownFormat(ext.to_string()));
     }
 
-    for &scheme in candidates {
+    for scheme in candidates {
         let result = match scheme {
             Scheme::Mobipocket => mobipocket::decrypt(input, keys),
             Scheme::Topaz => topaz::decrypt(input, keys),

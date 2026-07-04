@@ -43,6 +43,17 @@ macro_rules! ecb_decrypt_arm {
     };
 }
 
+macro_rules! ecb_encrypt_arm {
+    ($alg:ty, $key:expr, $data:expr) => {
+        Ok(ecb::Encryptor::<$alg>::new_from_slice($key)
+            .map_err(|_| CryptoError::KeyLength {
+                expected: 16,
+                got: $key.len(),
+            })?
+            .encrypt_padded_vec_mut::<NoPadding>($data))
+    };
+}
+
 macro_rules! ctr_arm {
     ($alg:ty, $key:expr, $iv:expr, $data:expr) => {{
         let mut cipher = ctr::Ctr128BE::<$alg>::new_from_slices($key, $iv).map_err(|_| {
@@ -96,6 +107,20 @@ pub fn ecb_decrypt(key: &[u8], data: &[u8]) -> Result<Vec<u8>> {
     }
 }
 
+/// AES-ECB encrypt, no padding, block by block. Round-trip partner of
+/// [`ecb_decrypt`]; used to wrap Kobo page keys and content in tests (§9.3).
+pub fn ecb_encrypt(key: &[u8], data: &[u8]) -> Result<Vec<u8>> {
+    match key.len() {
+        16 => ecb_encrypt_arm!(aes::Aes128, key, data),
+        24 => ecb_encrypt_arm!(aes::Aes192, key, data),
+        32 => ecb_encrypt_arm!(aes::Aes256, key, data),
+        n => Err(CryptoError::KeyLength {
+            expected: 16,
+            got: n,
+        }),
+    }
+}
+
 /// AES-CTR keystream application (big-endian 128-bit counter). Self-inverse.
 ///
 /// `iv` is the full 16-byte initial counter block. Used by the Kindle
@@ -123,6 +148,14 @@ mod tests {
         let pt = [0x11u8; 32];
         let ct = cbc_encrypt(&key, &iv, &pt).unwrap();
         assert_eq!(cbc_decrypt(&key, &iv, &ct).unwrap(), pt);
+    }
+
+    #[test]
+    fn ecb_round_trip_128() {
+        let key = [0x2bu8; 16];
+        let pt = [0x11u8; 32];
+        let ct = ecb_encrypt(&key, &pt).unwrap();
+        assert_eq!(ecb_decrypt(&key, &ct).unwrap(), pt);
     }
 
     #[test]
