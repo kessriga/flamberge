@@ -61,6 +61,11 @@ quick-xml = "0.36"
 # LZMA "alone"/legacy .lzma (FORMAT_ALONE) for KFX compressed pages (§3.4)
 lzma-rs = "0.3"
 
+# Kobo library database (§9); `bundled` compiles SQLite from source so there is
+# no system-libsqlite dependency. `tempfile` holds the WAL-patched DB copy.
+rusqlite = { version = "0.32", features = ["bundled"] }
+tempfile = "3"
+
 # cli
 clap = { version = "4", features = ["derive"] }
 
