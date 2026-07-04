@@ -39,7 +39,11 @@ pub struct PdfDocument {
     xrefs: Vec<XRef>,
     pub(super) trailer: Dict,
     cache: RefCell<HashMap<u32, Object>>,
-    objstm_cache: RefCell<HashMap<u32, Vec<Object>>>,
+    /// Parsed object streams, keyed by container id: `(N, flat member list)`.
+    objstm_cache: RefCell<HashMap<u32, (usize, Vec<Object>)>>,
+    /// Object ids currently being resolved — a re-entrancy guard against
+    /// self- or mutually-referencing cross-reference entries in crafted files.
+    resolving: RefCell<HashSet<u32>>,
 }
 
 impl std::fmt::Debug for PdfDocument {
@@ -64,6 +68,7 @@ impl PdfDocument {
             trailer: Dict::new(),
             cache: RefCell::new(HashMap::new()),
             objstm_cache: RefCell::new(HashMap::new()),
+            resolving: RefCell::new(HashSet::new()),
         };
         doc.read_xrefs()?;
         Ok(doc)
@@ -119,15 +124,31 @@ impl PdfDocument {
         if let Some(obj) = self.cache.borrow().get(&objid) {
             return Ok(obj.clone());
         }
+        // Guard against a cross-reference entry that resolves (directly or via
+        // an object-stream container) back to the object being resolved.
+        if !self.resolving.borrow_mut().insert(objid) {
+            return Err(FormatError::Invalid(format!(
+                "pdf: reference cycle resolving object {}",
+                objid
+            )));
+        }
+        let built = self.build_object(objid);
+        self.resolving.borrow_mut().remove(&objid);
+        let obj = built?;
+        self.cache.borrow_mut().insert(objid, obj.clone());
+        Ok(obj)
+    }
+
+    /// Parse `objid` from its cross-reference entry (no caching / cycle guard;
+    /// callers go through [`Self::get_object`]).
+    fn build_object(&self, objid: u32) -> Result<Object> {
         let entry = self
             .locate(objid)
             .ok_or_else(|| FormatError::Invalid(format!("pdf: object {} not found", objid)))?;
-        let obj = match entry {
-            XRefEntry::Uncompressed { offset } => self.parse_indirect_at(offset, objid)?,
-            XRefEntry::InObjStm { stmid, index } => self.parse_from_objstm(stmid, index)?,
-        };
-        self.cache.borrow_mut().insert(objid, obj.clone());
-        Ok(obj)
+        match entry {
+            XRefEntry::Uncompressed { offset } => self.parse_indirect_at(offset, objid),
+            XRefEntry::InObjStm { stmid, index } => self.parse_from_objstm(stmid, index),
+        }
     }
 
     /// Find the cross-reference entry for `objid`, newest section first.
@@ -181,6 +202,14 @@ impl PdfDocument {
                     )));
                 }
             };
+            // Capture /N now, from the container we already hold, so member
+            // lookups need not re-fetch (and re-clone) the whole container.
+            let n = stream
+                .dict
+                .get("N")
+                .and_then(Object::as_int)
+                .unwrap_or(0)
+                .max(0) as usize;
             let data = stream.decoded()?;
             // The decoded stream is a flat token sequence: 2*N header integers
             // (objnum, offset pairs) followed by the N member objects.
@@ -189,22 +218,15 @@ impl PdfDocument {
             while let Some(tok) = lex.next_token()? {
                 objs.push(object_from_token(tok, &mut lex, None)?);
             }
-            self.objstm_cache.borrow_mut().insert(stmid, objs);
+            self.objstm_cache.borrow_mut().insert(stmid, (n, objs));
         }
-        // /N members: the first 2*N entries are the header pairs, so member
-        // `index` sits at flat position 2*N + index.
-        let n = self
-            .get_object(stmid)?
-            .as_dict()
-            .and_then(|d| d.get("N"))
-            .and_then(Object::as_int)
-            .unwrap_or(0)
-            .max(0) as usize;
-        let i = n * 2 + index;
+        // The first 2*N entries are the header pairs, so member `index` sits at
+        // flat position 2*N + index.
         let borrow = self.objstm_cache.borrow();
-        let objs = borrow.get(&stmid).ok_or_else(|| {
+        let (n, objs) = borrow.get(&stmid).ok_or_else(|| {
             FormatError::Invalid(format!("pdf: object stream {} vanished", stmid))
         })?;
+        let i = n * 2 + index;
         objs.get(i).cloned().ok_or_else(|| {
             FormatError::Invalid(format!(
                 "pdf: object-stream {} has no member at index {}",
@@ -626,5 +648,52 @@ mod tests {
             .resolve(catalog.as_dict().unwrap().get("Pages").unwrap())
             .unwrap();
         assert_eq!(pages.type_name(), Some("Pages"));
+    }
+
+    /// A crafted xref stream whose object 1 is marked as living inside object
+    /// stream 1 (itself). Resolving it must error, not recurse to a stack
+    /// overflow.
+    fn build_self_referential_objstm_pdf() -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"%PDF-1.5\n");
+
+        // Object 2: the xref stream. W = [1,2,2]; entries for objects 0..=2:
+        //   0: free
+        //   1: type 2 → InObjStm{ stmid: 1, index: 0 }  (self-referential)
+        //   2: type 1 → this xref stream's own offset
+        let obj2_off = buf.len();
+        let mut xref_data = Vec::new();
+        let push_entry = |v: &mut Vec<u8>, f1: u8, f2: u16, f3: u16| {
+            v.push(f1);
+            v.extend_from_slice(&f2.to_be_bytes());
+            v.extend_from_slice(&f3.to_be_bytes());
+        };
+        push_entry(&mut xref_data, 0, 0, 0);
+        push_entry(&mut xref_data, 2, 1, 0);
+        push_entry(&mut xref_data, 1, obj2_off as u16, 0);
+        let xref_comp = zlib(&xref_data);
+        buf.extend_from_slice(
+            format!(
+                "2 0 obj\n<< /Type /XRef /Size 3 /Root 1 0 R /W [1 2 2] /Filter /FlateDecode /Length {} >>\nstream\n",
+                xref_comp.len()
+            )
+            .as_bytes(),
+        );
+        buf.extend_from_slice(&xref_comp);
+        buf.extend_from_slice(b"\nendstream\nendobj\n");
+        buf.extend_from_slice(format!("startxref\n{}\n%%EOF", obj2_off).as_bytes());
+        buf
+    }
+
+    #[test]
+    fn self_referential_objstm_errors_without_overflow() {
+        let pdf = build_self_referential_objstm_pdf();
+        let doc = PdfDocument::parse(&pdf).unwrap();
+        let err = doc.get_object(1).unwrap_err();
+        assert!(
+            matches!(&err, FormatError::Invalid(m) if m.contains("cycle")),
+            "expected a cycle error, got {:?}",
+            err
+        );
     }
 }

@@ -107,7 +107,19 @@ fn parse_dict_or_stream(lex: &mut Lexer, doc: Option<&PdfDocument>) -> Result<Ob
 
 /// Read a stream body. The cursor is positioned right after the `stream`
 /// keyword; per the PDF spec the keyword is followed by CRLF or a single LF.
-fn parse_stream_body(dict: Dict, lex: &mut Lexer, doc: Option<&PdfDocument>) -> Result<Object> {
+fn parse_stream_body(mut dict: Dict, lex: &mut Lexer, doc: Option<&PdfDocument>) -> Result<Object> {
+    // Resolve indirect `/Filter` / `/DecodeParms` now, while the document is in
+    // hand: stream decoding ([`PdfStream::decoded`]) has no document access, so
+    // an unresolved `/Filter 12 0 R` would otherwise be silently ignored.
+    for key in ["Filter", "DecodeParms", "DP"] {
+        if let Some(val) = dict.get(key) {
+            if references(val) {
+                let resolved = resolve_shallow(val.clone(), doc);
+                dict.insert(key.to_string(), resolved);
+            }
+        }
+    }
+
     // Consume the single EOL after `stream`.
     if lex.peek() == Some(b'\r') {
         lex.pos += 1;
@@ -188,6 +200,37 @@ fn find_endstream(data: &[u8], start: usize) -> Option<usize> {
         i += 1;
     }
     None
+}
+
+/// True if `obj` is (or contains, one level deep) an indirect reference.
+fn references(obj: &Object) -> bool {
+    match obj {
+        Object::Ref(..) => true,
+        Object::Array(a) => a.iter().any(|x| matches!(x, Object::Ref(..))),
+        _ => false,
+    }
+}
+
+/// Resolve a value one level deep: a top-level reference, or the elements of an
+/// array. Nested dicts are left untouched (filter/parms values never nest a
+/// reference deeper than this). Unresolvable references become `Null`.
+fn resolve_shallow(obj: Object, doc: Option<&PdfDocument>) -> Object {
+    let doc = match doc {
+        Some(d) => d,
+        None => return obj,
+    };
+    match obj {
+        Object::Ref(objid, _) => doc.get_object(objid).unwrap_or(Object::Null),
+        Object::Array(a) => Object::Array(
+            a.into_iter()
+                .map(|x| match x {
+                    Object::Ref(objid, _) => doc.get_object(objid).unwrap_or(Object::Null),
+                    other => other,
+                })
+                .collect(),
+        ),
+        other => other,
+    }
 }
 
 /// Read the next token expecting an integer.

@@ -21,21 +21,43 @@ impl PdfStream {
         }
     }
 
-    /// The `/DecodeParms` (or legacy `/DP`) dictionary, if any.
-    fn decode_parms(&self) -> Option<&Dict> {
-        self.dict
-            .get("DP")
-            .or_else(|| self.dict.get("DecodeParms"))
-            .and_then(Object::as_dict)
+    /// The per-filter `/DecodeParms` (or legacy `/DP`) list, aligned 1:1 with
+    /// [`Self::filters`].
+    ///
+    /// `/DecodeParms` is a single dict when `/Filter` is a single name, or an
+    /// array (of dicts / nulls) parallel to a `/Filter` array. Either form maps
+    /// onto a per-filter slot so the predictor is applied only to its owning
+    /// filter's output — never to the whole chain.
+    fn decode_parms(&self, nfilters: usize) -> Vec<Option<Dict>> {
+        let mut out = vec![None; nfilters];
+        match self.dict.get("DP").or_else(|| self.dict.get("DecodeParms")) {
+            Some(Object::Dict(d)) => {
+                if let Some(slot) = out.first_mut() {
+                    *slot = Some(d.clone());
+                }
+            }
+            Some(Object::Array(a)) => {
+                for (slot, item) in out.iter_mut().zip(a) {
+                    if let Object::Dict(d) = item {
+                        *slot = Some(d.clone());
+                    }
+                }
+            }
+            _ => {}
+        }
+        out
     }
 
-    /// Decode the raw stream body: apply each filter, then the predictor.
+    /// Decode the raw stream body: apply each filter and, if that filter
+    /// declares one, its predictor.
     ///
     /// Names `Fl`/`LZW`/`A85` are accepted as abbreviations, matching
     /// `ineptpdf.py`.
     pub fn decoded(&self) -> Result<Vec<u8>> {
+        let filters = self.filters();
+        let parms = self.decode_parms(filters.len());
         let mut data = self.rawdata.clone();
-        for f in self.filters() {
+        for (f, params) in filters.iter().zip(&parms) {
             data = match f.as_str() {
                 "FlateDecode" | "Fl" => flate_decode(&data)?,
                 "LZWDecode" | "LZW" => lzw_decode(&data)?,
@@ -50,7 +72,7 @@ impl PdfStream {
                     )));
                 }
             };
-            if let Some(params) = self.decode_parms() {
+            if let Some(params) = params {
                 if let Some(pred) = params.get("Predictor").and_then(Object::as_int) {
                     if pred >= 2 {
                         data = apply_predictor(pred, params, &data)?;
@@ -379,5 +401,39 @@ mod tests {
             genno: 0,
         };
         assert_eq!(stream.decoded().unwrap(), plain);
+    }
+
+    #[test]
+    fn array_form_decode_parms_applies_predictor() {
+        // `/Filter [/FlateDecode] /DecodeParms [<< /Predictor 12 /Columns 3 >>]`
+        // — the array form must still reverse the PNG-up predictor, not skip it.
+        let filtered = [2u8, 10, 20, 30, 2, 0, 0, 0]; // two PNG-Up rows
+        let comp = zlib(&filtered);
+        let parms: Dict = [
+            ("Predictor".to_string(), Object::Int(12)),
+            ("Columns".to_string(), Object::Int(3)),
+        ]
+        .into_iter()
+        .collect();
+        let dict: Dict = [
+            ("Length".to_string(), Object::Int(comp.len() as i64)),
+            (
+                "Filter".to_string(),
+                Object::Array(vec![Object::Name("FlateDecode".into())]),
+            ),
+            (
+                "DecodeParms".to_string(),
+                Object::Array(vec![Object::Dict(parms)]),
+            ),
+        ]
+        .into_iter()
+        .collect();
+        let stream = PdfStream {
+            dict,
+            rawdata: comp,
+            objid: 7,
+            genno: 0,
+        };
+        assert_eq!(stream.decoded().unwrap(), vec![10, 20, 30, 10, 20, 30]);
     }
 }
