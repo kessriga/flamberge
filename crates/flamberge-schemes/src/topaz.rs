@@ -93,6 +93,11 @@ fn candidate_pids(metadata: Option<&Metadata>, keys: &KeyStore) -> Vec<[u8; KEY_
         raw.push(pid::book_pid_from_serial(serial.as_bytes(), &md1, &md2));
         raw.push(pid::eink_pid_from_serial(serial));
     }
+    // Kindle key databases carry the account DSN + token → extra candidate PIDs
+    // (§6.2, `getK4Pids`); `md1`/`md2` play the rec209/token roles here.
+    for db in &keys.kindle_dbs {
+        raw.extend(pid::k4_pids(&md1, &md2, db));
+    }
 
     let mut out = Vec::with_capacity(raw.len());
     for candidate in raw {

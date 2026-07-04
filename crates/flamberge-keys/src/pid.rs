@@ -104,6 +104,113 @@ pub fn eink_pid_from_serial(serial: &str) -> String {
     checksum_pid(&format!("{base}*"))
 }
 
+/// CRC-32 (poly `0xEDB88320`) table used to seed the device PID (§6.5,
+/// `kgenpids.py::generatePidEncryptionTable`).
+fn pid_encryption_table() -> [u32; 256] {
+    let mut table = [0u32; 256];
+    for (i, slot) in table.iter_mut().enumerate() {
+        let mut value = i as u32;
+        for _ in 0..8 {
+            value = if value & 1 == 0 {
+                value >> 1
+            } else {
+                (value >> 1) ^ 0xEDB8_8320
+            };
+        }
+        *slot = value;
+    }
+    table
+}
+
+/// `generateDevicePID` — a CRC-seeded 8-char PID from the first 4 DSN bytes.
+/// (The plugin notes this PID is used for nothing, but it stays in the list.)
+fn generate_device_pid(table: &[u32; 256], dsn: &[u8]) -> Option<String> {
+    if dsn.len() < 4 {
+        return None;
+    }
+    let mut seed = 0u32;
+    for &b in &dsn[..4] {
+        let index = ((b as u32) ^ seed) & 0xFF;
+        seed = (seed >> 8) ^ table[index as usize];
+    }
+    let mut pid = [
+        (seed >> 24) as u8,
+        (seed >> 16) as u8,
+        (seed >> 8) as u8,
+        seed as u8,
+        (seed >> 24) as u8,
+        (seed >> 16) as u8,
+        (seed >> 8) as u8,
+        seed as u8,
+    ];
+    let mut index = 0;
+    for &b in &dsn[..4] {
+        pid[index] ^= b;
+        index = (index + 1) % 8;
+    }
+    let mut out = String::with_capacity(8);
+    for &b in &pid {
+        let idx = ((((b >> 5) & 3) ^ b) & 0x1f) as usize + (b >> 7) as usize;
+        out.push(CHARMAP4[idx] as char);
+    }
+    Some(out)
+}
+
+/// Hex value for `name` in a Kindle DB, decoded to bytes.
+fn db_hex(db: &crate::kindle::KindleDb, name: &str) -> Option<Vec<u8>> {
+    db.get(name).and_then(|h| hex::decode(h).ok())
+}
+
+/// Book PIDs derived from a decoded Kindle key database (`getK4Pids`).
+///
+/// The account DSN comes from an explicit `DSN` value, or is reconstructed from
+/// `MazamaRandomNumber` + the serial/ID string + the (possibly pre-hashed)
+/// username (§6.2). Combined with the account token and the book's EXTH-209
+/// record + token, this yields the device PID, the primary book PID, and two
+/// fallback variants. Returns an empty list when the DB lacks the DSN inputs.
+pub fn k4_pids(rec209: &[u8], token: &[u8], db: &crate::kindle::KindleDb) -> Vec<String> {
+    let account_token = db_hex(db, "kindle.account.tokens").unwrap_or_default();
+
+    let dsn = match db_hex(db, "DSN") {
+        Some(dsn) => dsn,
+        None => {
+            let Some(mazama) = db_hex(db, "MazamaRandomNumber") else {
+                return Vec::new();
+            };
+            let Some(id_string) = db_hex(db, "SerialNumber").or_else(|| db_hex(db, "IDString"))
+            else {
+                return Vec::new();
+            };
+            let encoded_username = match db_hex(db, "UsernameHash") {
+                Some(hash) => hash,
+                None => match db_hex(db, "UserName") {
+                    Some(name) => encode_hash(&name, CHARMAP1),
+                    None => return Vec::new(),
+                },
+            };
+            let encoded_id = encode_hash(&id_string, CHARMAP1);
+            let mut buf = mazama;
+            buf.extend_from_slice(&encoded_id);
+            buf.extend_from_slice(&encoded_username);
+            encode(&digest::sha1(&buf), CHARMAP1)
+        }
+    };
+
+    let mut pids = Vec::new();
+    if let Some(device_pid) = generate_device_pid(&pid_encryption_table(), &dsn) {
+        pids.push(checksum_pid(&device_pid));
+    }
+    // Primary book PID and two variants (with/without the DSN or account token).
+    let book_pid = |parts: &[&[u8]]| -> String {
+        let buf: Vec<u8> = parts.concat();
+        checksum_pid(&encode_pid(&digest::sha1(&buf)))
+    };
+    pids.push(book_pid(&[&dsn, &account_token, rec209, token]));
+    pids.push(book_pid(&[&account_token, rec209, token]));
+    pids.push(book_pid(&[&dsn, rec209, token]));
+    pids
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -120,6 +227,38 @@ mod tests {
         let full = checksum_pid(base);
         assert_eq!(full.len(), 10);
         assert!(full.starts_with(base));
+    }
+
+    #[test]
+    fn k4_pids_from_explicit_dsn() {
+        // A DB with a direct DSN + account token yields the device PID plus the
+        // primary book PID and two variants — four 10-char PIDs.
+        let mut db = crate::kindle::KindleDb::new();
+        db.insert("DSN".into(), hex::encode(b"device-serial-number"));
+        db.insert("kindle.account.tokens".into(), hex::encode(b"acct-token"));
+        let pids = k4_pids(b"\x00rec209data", b"tokenbytes", &db);
+        assert_eq!(pids.len(), 4);
+        for p in &pids {
+            assert_eq!(p.len(), 10, "each book PID is 10 chars: {p}");
+        }
+    }
+
+    #[test]
+    fn k4_pids_derives_dsn_from_mazama() {
+        // No DSN key: reconstruct it from MazamaRandomNumber + serial + username.
+        let mut db = crate::kindle::KindleDb::new();
+        db.insert("MazamaRandomNumber".into(), hex::encode(b"mazama-rand"));
+        db.insert("SerialNumber".into(), hex::encode(b"B00XYZ"));
+        db.insert("UserName".into(), hex::encode(b"alice"));
+        db.insert("kindle.account.tokens".into(), hex::encode(b"acct"));
+        let pids = k4_pids(b"rec", b"tok", &db);
+        assert_eq!(pids.len(), 4);
+    }
+
+    #[test]
+    fn k4_pids_empty_without_dsn_inputs() {
+        let db = crate::kindle::KindleDb::new();
+        assert!(k4_pids(b"rec", b"tok", &db).is_empty());
     }
 
     #[test]

@@ -143,6 +143,11 @@ fn normalize_pids(header: &MobiHeader, keys: &KeyStore) -> Vec<String> {
         ));
         raw.push(pid::eink_pid_from_serial(serial));
     }
+    // Kindle key databases carry the account DSN + token, so they yield extra
+    // candidate book PIDs beyond bare serials (§6.2, `getK4Pids`).
+    for db in &keys.kindle_dbs {
+        raw.extend(pid::k4_pids(&rec209, &token, db));
+    }
 
     let mut good = Vec::with_capacity(raw.len());
     for p in raw {
@@ -393,6 +398,31 @@ mod tests {
         // Two derived PIDs from the one serial, both normalized to 8 chars.
         assert_eq!(good.iter().filter(|p| p.len() != 8).count(), 0);
         assert!(good.len() >= 4); // 2 explicit + 2 derived
+    }
+
+    #[test]
+    fn kindle_db_expands_candidate_pids() {
+        // A decoded Kindle key database contributes extra candidate PIDs beyond
+        // what bare serials/PIDs provide (§6.2, getK4Pids → AC4).
+        let header = MobiHeader::from_image(&assemble(&mobi_record0(2, 1), b"x").image).unwrap();
+        let mut db = flamberge_keys::kindle::KindleDb::new();
+        db.insert("DSN".into(), "00112233445566778899aabbccddeeff".into());
+        db.insert("kindle.account.tokens".into(), "cafebabedeadbeef".into());
+
+        let without = normalize_pids(&header, &KeyStore::default());
+        let with = normalize_pids(
+            &header,
+            &KeyStore {
+                kindle_dbs: vec![db],
+                ..KeyStore::default()
+            },
+        );
+        assert!(
+            with.len() > without.len(),
+            "kindle_db should add candidate PIDs: {} vs {}",
+            with.len(),
+            without.len()
+        );
     }
 
     // ---- full-file round trips ----------------------------------------------
