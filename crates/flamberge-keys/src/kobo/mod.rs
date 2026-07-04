@@ -45,19 +45,33 @@ pub fn derive_userkeys(macaddrs_and_serials: &[String], userids: &[String]) -> V
     keys
 }
 
+/// The result of on-host Kobo discovery: the derived candidate user keys **and**
+/// the raw library-DB bytes they came from. The DB is returned because the Kobo
+/// scheme needs it too — the per-file wrapped page keys live in the DB, not in
+/// the book — so a caller (e.g. `decrypt --auto-keys`) can feed both into the
+/// [`KeyStore`](crate::KeyStore) from a single host scan.
+#[derive(Debug, Clone)]
+pub struct Discovery {
+    /// Candidate 16-byte AES user keys.
+    pub user_keys: Vec<[u8; 16]>,
+    /// Raw bytes of the located Kobo library SQLite DB.
+    pub db: Vec<u8>,
+}
+
 /// Locate the Kobo library DB on this host, read its `UserID`s, enumerate NIC
 /// MAC addresses (plus the device serial when a mounted device is found), and
-/// derive the candidate user keys via [`derive_userkeys`].
+/// derive the candidate user keys via [`derive_userkeys`]. Returns them together
+/// with the DB bytes (see [`Discovery`]).
 ///
 /// Returns [`KeyError::NotFound`] — never panics — when the DB is missing, has
 /// no `UserID`s, or no MAC addresses/serials are available (§9.2).
-pub fn discover_userkeys() -> Result<Vec<[u8; 16]>> {
+pub fn discover() -> Result<Discovery> {
     let host::LocatedDb {
         db_bytes,
         device_root,
     } = host::find_kobo_db()?;
 
-    let userids = db::read_userids(db_bytes)?;
+    let userids = db::read_userids(db_bytes.clone())?;
     if userids.is_empty() {
         return Err(KeyError::NotFound(
             "the Kobo database has no UserID rows".into(),
@@ -76,7 +90,15 @@ pub fn discover_userkeys() -> Result<Vec<[u8; 16]>> {
         ));
     }
 
-    Ok(derive_userkeys(&macaddrs, &userids))
+    Ok(Discovery {
+        user_keys: derive_userkeys(&macaddrs, &userids),
+        db: db_bytes,
+    })
+}
+
+/// Derive just the candidate user keys from this host (see [`discover`]).
+pub fn discover_userkeys() -> Result<Vec<[u8; 16]>> {
+    Ok(discover()?.user_keys)
 }
 
 #[cfg(test)]

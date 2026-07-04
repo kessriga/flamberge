@@ -76,11 +76,23 @@ pub struct KindleArgs {
 fn run_kindle(args: KindleArgs) -> Result<()> {
     let no_artifacts = args.k4i.is_empty() && args.kinf.is_empty() && args.android.is_empty();
     if no_artifacts {
-        // Nothing to work from: attempt (stubbed) host discovery to produce the
-        // canonical "not supported here" message plus a hint at the flags.
-        flamberge_keys::kindle::extract_local_keys()
-            .context("no artifacts supplied — pass --k4i/--kinf/--android (see docs §6)")?;
-        return Ok(());
+        // Nothing to work from: attempt on-host discovery. It is currently a stub
+        // (returns an error, surfaced with a hint at the flags), but if it is ever
+        // implemented, print whatever databases it finds.
+        match flamberge_keys::kindle::extract_local_keys() {
+            Ok(dbs) => {
+                print_dbs(&dbs);
+                eprintln!(
+                    "Decoded {} Kindle key database(s) from this host",
+                    dbs.len()
+                );
+                return Ok(());
+            }
+            Err(e) => {
+                return Err(anyhow::Error::new(e)
+                    .context("no artifacts supplied — pass --k4i/--kinf/--android (see docs §6)"));
+            }
+        }
     }
 
     let mut dbs: Vec<KindleDb> = Vec::new();

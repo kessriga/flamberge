@@ -7,6 +7,7 @@
 //! atomically so a failure never leaves a partial file, and prints a per-file
 //! summary. Reference: `docs/DEDRM_SCHEMES.md` §0 (dispatch).
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -18,27 +19,41 @@ use crate::{autokeys, naming, DecryptArgs};
 
 /// Entry point for `flamberge decrypt`.
 pub fn run(args: DecryptArgs) -> Result<()> {
+    if args.output.is_some() && args.output_dir.is_some() {
+        bail!("--output and --output-dir are mutually exclusive");
+    }
+
     let keys = build_keystore(&args)?;
-    let files = expand_inputs(&args.inputs)?;
+    let (files, saw_directory) = expand_inputs(&args.inputs)?;
     if files.is_empty() {
         bail!("no input files found");
     }
 
-    // `--output` names a single destination, so it is meaningful only for a lone
-    // input file; batch runs use `--output-dir` (or each input's own parent).
-    let single = files.len() == 1;
-    if args.output.is_some() && !single {
+    // "Batch" is decided by intent — multiple inputs, or a directory to scan —
+    // not by how many files a lone directory happened to hold. So a folder with
+    // a single stray file still *skips* it rather than erroring, and `--output`
+    // (a single destination) is rejected the moment a directory is involved.
+    let batch = args.inputs.len() > 1 || saw_directory;
+    if args.output.is_some() && batch {
         bail!("--output is only valid for a single input file; use --output-dir for batch runs");
     }
 
     let out_dir = args.output_dir.as_deref();
+    if let Some(dir) = out_dir {
+        fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    }
+
+    // `seen` guards against two inputs resolving to the same output path (e.g.
+    // same-named books from different folders under one `--output-dir`); the
+    // second is failed rather than silently overwriting the first.
+    let mut seen = HashSet::new();
 
     // Single explicit input: print a plain success line, or surface a
     // skip/failure as a hard error so the exit code and message are unambiguous
     // (no redundant per-file report line).
-    if single {
+    if !batch {
         let file = &files[0];
-        return match decrypt_one(file, &keys, args.output.as_deref(), out_dir) {
+        return match decrypt_one(file, &keys, args.output.as_deref(), out_dir, &mut seen) {
             Outcome::Written(out) => {
                 println!("Wrote {}", out.display());
                 Ok(())
@@ -51,7 +66,7 @@ pub fn run(args: DecryptArgs) -> Result<()> {
     // Batch: report each file, then a tally; fail the run if any file failed.
     let mut tally = Tally::default();
     for file in &files {
-        let outcome = decrypt_one(file, &keys, args.output.as_deref(), out_dir);
+        let outcome = decrypt_one(file, &keys, args.output.as_deref(), out_dir, &mut seen);
         report(file, &outcome);
         tally.record(&outcome);
     }
@@ -111,6 +126,7 @@ fn decrypt_one(
     keys: &KeyStore,
     explicit_out: Option<&Path>,
     out_dir: Option<&Path>,
+    seen: &mut HashSet<PathBuf>,
 ) -> Outcome {
     let data = match fs::read(input) {
         Ok(d) => d,
@@ -131,6 +147,13 @@ fn decrypt_one(
         Some(p) => p.to_path_buf(),
         None => naming::default_output(input, &book.extension, book.title.as_deref(), out_dir),
     };
+    // Refuse to overwrite an output another input already produced this run.
+    if !seen.insert(out.clone()) {
+        return Outcome::Failed(format!(
+            "output path {} collides with an earlier input in this run",
+            out.display()
+        ));
+    }
     match atomic_write(&out, &book.data) {
         Ok(()) => Outcome::Written(out),
         Err(e) => Outcome::Failed(format!("writing output: {e}")),
@@ -187,19 +210,25 @@ fn build_keystore(args: &DecryptArgs) -> Result<KeyStore> {
     Ok(keys)
 }
 
-/// Expand the input list into a flat, sorted list of files: a directory becomes
-/// its immediate file entries (non-recursive); a file is taken as-is.
-fn expand_inputs(inputs: &[PathBuf]) -> Result<Vec<PathBuf>> {
+/// Expand the input list into a flat, sorted list of files, reporting whether any
+/// input was a directory. A directory becomes its immediate file entries
+/// (non-recursive), skipping files we ourselves produced (`*_nodrm.*`) so that
+/// re-running over a folder does not try to "decrypt" already-decrypted output.
+/// An explicitly named file is always taken as-is (never suffix-filtered).
+fn expand_inputs(inputs: &[PathBuf]) -> Result<(Vec<PathBuf>, bool)> {
     let mut files = Vec::new();
+    let mut saw_directory = false;
     for path in inputs {
         let meta = fs::metadata(path).with_context(|| format!("reading {}", path.display()))?;
         if meta.is_dir() {
+            saw_directory = true;
             for entry in
                 fs::read_dir(path).with_context(|| format!("listing {}", path.display()))?
             {
                 let entry = entry?;
-                if entry.file_type()?.is_file() {
-                    files.push(entry.path());
+                let entry_path = entry.path();
+                if entry.file_type()?.is_file() && !is_nodrm_output(&entry_path) {
+                    files.push(entry_path);
                 }
             }
         } else {
@@ -207,7 +236,15 @@ fn expand_inputs(inputs: &[PathBuf]) -> Result<Vec<PathBuf>> {
         }
     }
     files.sort();
-    Ok(files)
+    Ok((files, saw_directory))
+}
+
+/// True if `path` looks like one of our own decrypted outputs (stem ends in
+/// `_nodrm`), so a directory scan can skip it.
+fn is_nodrm_output(path: &Path) -> bool {
+    path.file_stem()
+        .and_then(|s| s.to_str())
+        .is_some_and(|s| s.ends_with("_nodrm"))
 }
 
 /// Write `data` to `dest` atomically: write a sibling `.part` file, then rename
@@ -249,20 +286,24 @@ mod tests {
         let dir = tmp_dir();
         fs::write(dir.join("b.epub"), b"x").unwrap();
         fs::write(dir.join("a.mobi"), b"x").unwrap();
+        fs::write(dir.join("a_nodrm.mobi"), b"x").unwrap(); // our own output: skipped
         fs::create_dir(dir.join("sub")).unwrap();
         fs::write(dir.join("sub/deep.pdf"), b"x").unwrap(); // nested: not included
 
-        let files = expand_inputs(std::slice::from_ref(&dir)).unwrap();
+        let (files, saw_dir) = expand_inputs(std::slice::from_ref(&dir)).unwrap();
+        assert!(saw_dir);
         let names: Vec<_> = files
             .iter()
             .map(|p| p.file_name().unwrap().to_str().unwrap().to_string())
             .collect();
-        // Sorted, immediate files only (subdir contents excluded).
+        // Sorted, immediate files only; subdir contents and `_nodrm` outputs excluded.
         assert_eq!(names, vec!["a.mobi", "b.epub"]);
 
-        // A plain file passes straight through.
-        let one = expand_inputs(&[dir.join("a.mobi")]).unwrap();
-        assert_eq!(one, vec![dir.join("a.mobi")]);
+        // A plain file passes straight through and is *not* flagged as a directory,
+        // even if it is itself a `_nodrm` file (explicit inputs are never filtered).
+        let (one, saw_dir) = expand_inputs(&[dir.join("a_nodrm.mobi")]).unwrap();
+        assert_eq!(one, vec![dir.join("a_nodrm.mobi")]);
+        assert!(!saw_dir);
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -290,7 +331,7 @@ mod tests {
         fs::write(&input, b"just text").unwrap();
         let keys = KeyStore::new();
 
-        let outcome = decrypt_one(&input, &keys, None, None);
+        let outcome = decrypt_one(&input, &keys, None, None, &mut HashSet::new());
         assert!(matches!(outcome, Outcome::Skipped(_)));
         // Nothing written.
         assert!(!dir.join("notes_nodrm.txt").exists());
@@ -306,7 +347,7 @@ mod tests {
         fs::write(&input, b"short").unwrap();
         let keys = KeyStore::new();
 
-        let outcome = decrypt_one(&input, &keys, None, None);
+        let outcome = decrypt_one(&input, &keys, None, None, &mut HashSet::new());
         assert!(matches!(outcome, Outcome::Failed(_)));
         let entries: Vec<_> = fs::read_dir(&dir)
             .unwrap()
@@ -314,5 +355,13 @@ mod tests {
             .collect();
         assert_eq!(entries, vec![std::ffi::OsString::from("broken.mobi")]);
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn is_nodrm_output_matches_only_our_suffix() {
+        assert!(is_nodrm_output(Path::new("book_nodrm.epub")));
+        assert!(is_nodrm_output(Path::new("/a/b/Great Read_nodrm.mobi")));
+        assert!(!is_nodrm_output(Path::new("book.epub")));
+        assert!(!is_nodrm_output(Path::new("nodrm.epub")));
     }
 }
