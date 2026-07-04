@@ -164,6 +164,122 @@ fn decrypts_with_correct_pid_and_names_by_title() {
 }
 
 #[test]
+fn batch_decrypts_directory_and_skips_strays() {
+    let dir = temp_dir("batch");
+    // A real (synthetic) DRMed book plus a stray non-ebook file in one folder.
+    let (image, _) = synth_book();
+    std::fs::write(dir.join("B00TESTPI0.azw"), &image).unwrap();
+    std::fs::write(dir.join("notes.txt"), b"not an ebook").unwrap();
+
+    let output = flamberge()
+        .arg("decrypt")
+        .arg(&dir) // directory input → batch mode
+        .arg("--pid")
+        .arg(PID)
+        .output()
+        .unwrap();
+
+    // The stray file is skipped (not a failure), so the run succeeds overall.
+    assert!(
+        output.status.success(),
+        "batch run should succeed when the only non-ok file is skipped; stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("OK "), "expected an OK line, got: {stdout}");
+    assert!(
+        stdout.contains("SKIP") && stdout.contains("notes.txt"),
+        "stray file should be reported as skipped, got: {stdout}"
+    );
+    assert!(
+        stdout.contains("1 ok, 0 failed, 1 skipped"),
+        "expected batch tally, got: {stdout}"
+    );
+    // The decrypted book was written; the stray file produced no output.
+    assert!(dir.join("B00TESTPI0_Hello Title_nodrm.mobi").exists());
+    assert!(!dir.join("notes_nodrm.txt").exists());
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn batch_output_dir_is_created_and_collisions_do_not_overwrite() {
+    let dir = temp_dir("collide");
+    // Two inputs with the SAME basename in different folders — both would map to
+    // `out/<same>_nodrm.mobi` under one --output-dir.
+    let a = dir.join("a");
+    let b = dir.join("b");
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+    let (image, _) = synth_book();
+    std::fs::write(a.join("B00TESTPI0.azw"), &image).unwrap();
+    std::fs::write(b.join("B00TESTPI0.azw"), &image).unwrap();
+
+    let out = dir.join("does/not/exist/yet"); // must be created up front
+    let output = flamberge()
+        .arg("decrypt")
+        .arg(&a)
+        .arg(&b)
+        .arg("--output-dir")
+        .arg(&out)
+        .arg("--pid")
+        .arg(PID)
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // The output directory was auto-created (no upfront-missing-dir failure).
+    assert!(
+        out.is_dir(),
+        "--output-dir should be created; stdout: {stdout}"
+    );
+    // Exactly one book was written; the colliding second input FAILed instead of
+    // silently clobbering the first (data-loss guard), so the run exits nonzero.
+    assert!(!output.status.success(), "collision should fail the run");
+    assert!(
+        stdout.contains("1 ok, 1 failed"),
+        "expected one ok + one collision failure, got: {stdout}"
+    );
+    assert!(
+        stdout.contains("collides with an earlier input"),
+        "collision should be reported, got: {stdout}"
+    );
+    let written = out.join("B00TESTPI0_Hello Title_nodrm.mobi");
+    assert!(written.exists(), "the first book must survive");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn single_stray_file_in_directory_is_skipped_not_errored() {
+    let dir = temp_dir("lonestray");
+    let books = dir.join("books");
+    std::fs::create_dir_all(&books).unwrap();
+    // A directory holding exactly one non-ebook file.
+    std::fs::write(books.join("notes.txt"), b"not an ebook").unwrap();
+
+    let output = flamberge()
+        .arg("decrypt")
+        .arg(&books) // directory input → batch intent even with one file
+        .output()
+        .unwrap();
+
+    // Directory contract: stray files are skipped, so the run succeeds (exit 0).
+    assert!(
+        output.status.success(),
+        "a directory with only a stray file should succeed; stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("SKIP") && stdout.contains("0 ok, 0 failed, 1 skipped"),
+        "stray should be skipped, got: {stdout}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn wrong_pid_fails_cleanly_without_writing_output() {
     let dir = temp_dir("badpid");
     let input = dir.join("B00TESTPI0.azw");

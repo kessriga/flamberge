@@ -126,3 +126,59 @@ pub fn decrypt(input: &[u8], ext: &str, keys: &KeyStore) -> Result<DecryptedBook
     // No candidate recognized the file.
     Err(SchemeError::NoKeyWorked)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extension_routing_matches_plugin() {
+        assert_eq!(candidates_for_extension("mobi").len(), 3);
+        assert_eq!(candidates_for_extension(".AZW3").len(), 3); // dotted + upper-case
+        assert_eq!(candidates_for_extension("pdb"), &[Scheme::EReader]);
+        assert_eq!(
+            candidates_for_extension("pdf"),
+            &[Scheme::IgnoblePdf, Scheme::AdeptPdf]
+        );
+        assert_eq!(
+            candidates_for_extension("epub"),
+            &[Scheme::IgnobleEpub, Scheme::AdeptEpub]
+        );
+        assert_eq!(candidates_for_extension("kepub"), &[Scheme::Kobo]);
+        assert!(candidates_for_extension("txt").is_empty());
+    }
+
+    #[test]
+    fn unknown_extension_is_reported() {
+        let keys = KeyStore::new();
+        match decrypt(b"whatever", "txt", &keys) {
+            Err(SchemeError::UnknownFormat(ext)) => assert_eq!(ext, "txt"),
+            other => panic!("expected UnknownFormat, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn all_candidates_falling_through_yields_no_key_worked() {
+        // A non-ZIP buffer is not an EPUB, so both EPUB candidates return
+        // `NotThisScheme`; dispatch must exhaust them and report `NoKeyWorked`
+        // rather than surfacing an internal error from the last candidate tried.
+        let keys = KeyStore::new();
+        assert!(matches!(
+            decrypt(b"definitely not a zip", "epub", &keys),
+            Err(SchemeError::NoKeyWorked)
+        ));
+    }
+
+    #[test]
+    fn terminal_error_is_surfaced_not_masked() {
+        // A scheme that claims the file but fails must have its error propagated
+        // verbatim (not collapsed to `NoKeyWorked`). `.pdb` routes to EReader,
+        // whose first step is `PalmDb::parse(input)?`; a truncated buffer makes
+        // that a terminal `Format` error, which dispatch must surface as-is.
+        let keys = KeyStore::new();
+        assert!(matches!(
+            decrypt(&[0u8; 8], "pdb", &keys),
+            Err(SchemeError::Format(_))
+        ));
+    }
+}
