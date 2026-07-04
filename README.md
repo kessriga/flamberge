@@ -13,11 +13,11 @@ The scheme-by-scheme algorithm reference this project is built from lives in
 
 | Crate | Role | Status |
 |---|---|---|
-| `flamberge-crypto` | Shared ciphers: PC1, Topaz, AES, DES, RC4, CRC-32, digests, PBKDF2 | Implemented + tested |
-| `flamberge-formats` | Container parsers: PalmDB, TPZ0, KFX-ZIP, ION, OCF/EPUB, PDF | PalmDB done; rest stubbed |
-| `flamberge-keys` | Key acquisition: PID gen, B&N/eReader/Kobo offline keygen, platform extraction | Offline generators done; extraction stubbed |
-| `flamberge-schemes` | Per-scheme DRM removal, format dispatch | Trait + dispatch wired; schemes stubbed |
-| `flamberge-cli` | The `flamberge` binary | Wired |
+| `flamberge-crypto` | Shared ciphers: PC1, Topaz, AES, DES, RC4, CRC-32, digests, PBKDF2, RSA | Implemented + tested |
+| `flamberge-formats` | Container parsers: PalmDB, TPZ0, KFX-ZIP, ION, OCF/EPUB, PDF, PMLZ | Implemented + tested |
+| `flamberge-keys` | Key acquisition: PID gen, B&N/eReader/Kobo offline keygen, platform extraction | Generators + Kindle/Adobe(macOS)/Kobo extraction done; on-host Kindle machine-value gathering & Adobe Windows DPAPI stubbed |
+| `flamberge-schemes` | Per-scheme DRM removal, format dispatch | All schemes implemented + tested |
+| `flamberge-cli` | The `flamberge` binary (batch mode, `--auto-keys`, `keys` subcommands) | Implemented + tested |
 
 Dependency direction: `crypto` ← `formats`, `keys` ← `schemes` ← `cli`.
 
@@ -30,22 +30,43 @@ cargo test
 
 ## Usage
 
-```sh
-# Decrypt (schemes are stubbed for now — this reports "not yet implemented")
-flamberge decrypt book.azw --serial B001234567890123
-flamberge decrypt book.epub --adept-key adobekey.der
+The scheme is chosen by file extension, then every candidate key is tried. Output
+defaults to `<stem>_nodrm.<ext>` next to the input.
 
-# Key helpers that already work offline:
+```sh
+# Decrypt a single book with an explicit key
+flamberge decrypt book.azw  --serial B001234567890123
+flamberge decrypt book.epub --adept-key adobekey.der
+flamberge decrypt book.kepub.epub --kobo-db KoboReader.sqlite
+
+# Batch: pass several files or a whole directory; a per-file OK/SKIP/FAIL summary
+# is printed and the exit code is non-zero if any file failed.
+flamberge decrypt ~/Books --output-dir ~/Books/nodrm
+
+# Best-effort: discover local Adobe/Kobo/Kindle keys on this host first
+flamberge decrypt book.epub --auto-keys
+
+# Offline key generators
 flamberge keys ignoble --name "John Smith" --cc "1234 5678 9012 3456"
 flamberge keys ereader --name "Jane Doe" --cc "4111 1111 1111 1111"
 flamberge keys eink-pid --serial B001234567890123
+
+# Extract keys from local DRM-app state
+flamberge keys adobe                 # macOS Adobe Digital Editions activation.dat
+flamberge keys kobo                  # Kobo device / desktop DB + NIC MACs
+flamberge keys kindle --k4i my.k4i   # decode a Kindle .k4i / .kinf / Android artifact
 ```
 
 ## Implementation status
 
-The crypto foundation and the offline key generators are real and unit-tested.
-Each scheme's container/decryption logic is a documented stub (`todo!`-style
-`Unimplemented` errors) pointing at the relevant `docs/DEDRM_SCHEMES.md` section,
-ready to be filled in one scheme at a time. A good first vertical slice is
-**Mobipocket** (§2): PalmDB + PC1 are already available, so only the record and
-voucher logic remains.
+All book-decryption schemes are implemented and unit-tested end-to-end:
+**Mobipocket**, **Topaz**, **KFX**, **Adobe ADEPT** (EPUB + PDF), **Barnes &
+Noble** (EPUB + PDF), **eReader** (`.pdb` → PMLZ), and **Kobo** (KEPUB). Key
+acquisition is real for the offline generators and for Kindle (`.k4i`/`.kinf`/
+Android), Adobe (macOS `activation.dat`), and Kobo (device/desktop DB + NIC
+MACs) extraction.
+
+What remains stubbed is on-host key *gathering* that isn't reproducible offline:
+Kindle local machine-value collection and Adobe Windows live-DPAPI (both need the
+target OS + user profile). A downloadable-binary release and a full
+scheme/platform support matrix are tracked separately.
