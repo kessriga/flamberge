@@ -47,6 +47,22 @@ pub fn cbc_decrypt(key: &[u8], iv: &[u8], data: &[u8]) -> Result<Vec<u8>> {
         .map_err(|_| CryptoError::NotBlockAligned(data.len(), 8))
 }
 
+/// DES-CBC encrypt, no padding. `data` must be a multiple of 8 bytes.
+///
+/// The inverse of [`cbc_decrypt`]; the Android V2 obfuscation encrypts key
+/// names to look them up in `AmazonSecureStorage.xml` (§6.4).
+pub fn cbc_encrypt(key: &[u8], iv: &[u8], data: &[u8]) -> Result<Vec<u8>> {
+    if data.len() % 8 != 0 {
+        return Err(CryptoError::NotBlockAligned(data.len(), 8));
+    }
+    Ok(cbc::Encryptor::<des::Des>::new_from_slices(key, iv)
+        .map_err(|_| CryptoError::IvLength {
+            expected: 8,
+            got: iv.len(),
+        })?
+        .encrypt_padded_vec_mut::<NoPadding>(data))
+}
+
 /// eReader's `fixKey`: force bit 7 (MSB) of each key byte to a parity-derived
 /// value. Note this operates on the **MSB**, not the standard DES LSB parity.
 /// Reference: `docs/DEDRM_SCHEMES.md` §8.2.
@@ -86,5 +102,15 @@ mod tests {
             ecb_encrypt(b"8bytekey", b"seven!!"),
             Err(CryptoError::NotBlockAligned(7, 8))
         ));
+    }
+
+    #[test]
+    fn cbc_round_trip() {
+        let key = b"8bytekey";
+        let iv = b"initves8";
+        let plain = b"Android V2 obfuscation payload!!"; // 32 bytes, 8-aligned
+        let ct = cbc_encrypt(key, iv, plain).unwrap();
+        assert_eq!(cbc_decrypt(key, iv, &ct).unwrap(), plain);
+        assert_ne!(&ct[..], &plain[..]);
     }
 }

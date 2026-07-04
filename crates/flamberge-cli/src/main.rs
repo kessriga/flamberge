@@ -20,7 +20,9 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Decrypt a DRM-protected ebook.
-    Decrypt(DecryptArgs),
+    // Boxed: `DecryptArgs` holds many key-source vectors and dwarfs the other
+    // variant, which trips `clippy::large_enum_variant`.
+    Decrypt(Box<DecryptArgs>),
     /// Generate or extract decryption keys.
     #[command(subcommand)]
     Keys(KeysCommand),
@@ -58,6 +60,14 @@ struct DecryptArgs {
     /// Kobo volume id (book) to decrypt; inferred when the DB has one volume.
     #[arg(long = "kobo-volumeid")]
     kobo_volumeid: Option<String>,
+    /// Kindle `.k4i` key database (JSON) to load; its DSN + account token expand
+    /// the candidate PID list for Mobipocket/Topaz (repeatable).
+    #[arg(long = "k4i")]
+    k4i: Vec<PathBuf>,
+    /// Android artifact to mine for candidate serials — `backup.ab`,
+    /// `AmazonSecureStorage.xml`, or `map_data_storage.db` (repeatable).
+    #[arg(long = "android")]
+    android: Vec<PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -92,7 +102,7 @@ enum KeysCommand {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Decrypt(args) => run_decrypt(args),
+        Command::Decrypt(args) => run_decrypt(*args),
         Command::Keys(cmd) => run_keys(cmd),
     }
 }
@@ -135,6 +145,18 @@ fn run_decrypt(args: DecryptArgs) -> Result<()> {
             Some(std::fs::read(path).with_context(|| format!("reading {}", path.display()))?);
     }
     keys.kobo_volumeid = args.kobo_volumeid;
+    for path in &args.k4i {
+        keys.kindle_dbs.push(
+            flamberge_keys::kindle::load_k4i(path)
+                .with_context(|| format!("loading .k4i {}", path.display()))?,
+        );
+    }
+    for path in &args.android {
+        keys.serials.extend(
+            flamberge_keys::kindle::serials_from_android(path)
+                .with_context(|| format!("extracting serials from {}", path.display()))?,
+        );
+    }
 
     let book = flamberge_schemes::decrypt(&data, ext, &keys)
         .with_context(|| format!("decrypting {}", args.input.display()))?;

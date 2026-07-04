@@ -45,6 +45,10 @@ pub struct KeyStore {
     /// Which Kobo volume (book) the input corresponds to. When `None` and the DB
     /// holds exactly one volume, that volume is used.
     pub kobo_volumeid: Option<String>,
+    /// Decoded Kindle key databases (from `.k4i` / `.kinf`). Unlike bare
+    /// serials, a full DB carries the account DSN + token, so the Kindle schemes
+    /// derive extra candidate PIDs from it via [`pid::k4_pids`] (§6.2).
+    pub kindle_dbs: Vec<kindle::KindleDb>,
 }
 
 impl KeyStore {
