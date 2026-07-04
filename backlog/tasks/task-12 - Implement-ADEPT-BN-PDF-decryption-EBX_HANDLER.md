@@ -1,11 +1,11 @@
 ---
 id: TASK-12
 title: Implement ADEPT + B&N PDF decryption (EBX_HANDLER)
-status: In Progress
+status: Done
 assignee:
   - Kessriga Jeükal
 created_date: '2026-07-03 19:58'
-updated_date: '2026-07-04 10:25'
+updated_date: '2026-07-04 10:37'
 labels:
   - schemes
   - pdf
@@ -48,8 +48,6 @@ Flow (§7.4): read the `/Encrypt` dict; for EBX_HANDLER, base64-decode `ADEPT_LI
 - [x] #4 A clean, decrypted PDF is serialized (gen 0, /Encrypt removed) and re-opens without a password
 - [x] #5 Integration test decrypts a synthesized EBX_HANDLER PDF and asserts extracted text; Adobe.APS documented as out of scope
 <!-- AC:END -->
-
-
 
 ## Implementation Plan
 
@@ -96,6 +94,47 @@ last-16 rule, B&N's AES zero-IV + PKCS#7 last-16 rule. Only the wrapped-key
 Autonomous execution: recording plan and proceeding (user pre-approved "implement
 the next task").
 <!-- SECTION:PLAN:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented the EBX_HANDLER decrypt path for ADEPT and B&N PDFs (§7.4 / §4.5).
+PR #13 (branch `feat/task-12-pdf-decrypt`).
+
+**formats/pdf:** added `PdfDocument::set_decipher(Decipher)` — a scheme-supplied
+`Fn(objid, genno, bytes) -> plaintext` applied to each uncompressed object while
+reading (recursing Str/Array/Dict and a Stream's body), mirroring
+`ineptpdf.getobj` + `decipher_all`. ObjStm members aren't re-deciphered; the
+`/Encrypt` object is skipped; installing it clears the object caches. The
+existing `PdfSerializer` writes the deciphered (still `/Filter`-encoded) bytes
+verbatim, so no re-compression is needed.
+
+**schemes/pdf_common (new):** reads the `/Encrypt` `ADEPT_LICENSE` (base64 → raw
+inflate −15 → adept XML → `encryptedKey`), derives the per-object RC4 key
+(`genkey_v2`/`v3`, version by `/V`), installs the decipher, re-serializes.
+
+**adept/ignoble::decrypt_pdf:** reuse each scheme's existing `recover_book_key`
+unchanged — the PDF book-key unwrap is byte-identical to the EPUB one (ADEPT RSA
+`[-17]==0` last-16; B&N zero-IV AES + PKCS#7 last-16). Dispatch discriminates by
+wrapped-key length (48-byte AES ⇒ B&N, RSA modulus ⇒ ADEPT).
+
+**Out of scope (documented):** the `Adobe.APS`/Standard-V4 AES content branch
+(`genkey_v4`) and the German Onleihe principal key — RC4 covers retail EBX.
+
+**Tests:** 11 new — genkey layout vectors, namespaced `encryptedKey` extraction,
+and end-to-end decryption of synthesized EBX_HANDLER PDFs (RC4'd Flate stream +
+RC4'd string) for ADEPT (RSA, v2 + v3) and B&N (AES) through the top-level
+`decrypt(_, "pdf", _)`, asserting recovered text and stripped `/Encrypt`. No-key
+and unencrypted paths assert deterministic `NoKeyWorked`. Workspace fmt / clippy
+-D warnings / test all green.
+
+Follow-up noted: the pre-existing `unwrap_book_key_wrong_key_is_none_not_error`
+tests in adept.rs/ignoble.rs are ~1/256 probabilistic (random RSA keys); left
+as-is (out of scope), but the new PDF no-key test was written deterministically
+to avoid adding to that surface.
+
+**Update:** the pre-existing ~1/256-flaky `wrong_key`/`unwrap_book_key_wrong_key_is_none_not_error` tests in adept.rs (random RSA keys) were also made deterministic in this PR — every `thread_rng` was replaced with a per-call-site seeded `StdRng` (commit `514a418`). ignoble.rs tests were already deterministic (pure name+CC key generation). Workspace suite now passes reproducibly across repeated runs.
+<!-- SECTION:FINAL_SUMMARY:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
