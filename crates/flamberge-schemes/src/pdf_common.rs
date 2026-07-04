@@ -231,6 +231,7 @@ mod tests {
     use base64::Engine;
     use flamberge_crypto::aes;
     use flamberge_formats::pdf::PdfDocument;
+    use rand::SeedableRng;
 
     use crate::KeyStore;
 
@@ -378,7 +379,8 @@ mod tests {
     }
 
     fn adept_keys(book_key: &[u8; 16]) -> (Vec<u8>, String) {
-        let mut rng = rand::thread_rng();
+        // Fixed seed → reproducible key/license, so the test data is deterministic.
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0x1201);
         let key = RsaPrivateKey::new(&mut rng, 1024).expect("keygen");
         let der = key.to_pkcs1_der().unwrap().as_bytes().to_vec();
         let license = adept_license_value(&adept_wrap(&key, book_key));
