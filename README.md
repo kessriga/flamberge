@@ -104,3 +104,7 @@ state depends on the platform:
 the user's profile (Windows DPAPI, host-specific machine values). The decryption
 algorithms for those paths are implemented and tested; only the live gathering
 is stubbed.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).
