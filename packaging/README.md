@@ -137,6 +137,30 @@ what gets submitted. You do a one-time first submission; the `winget` job
    The job preserves the nested-portable-zip layout across bumps, so you only
    author it once (step 2).
 
+**Validating manifests without Windows.** The winget-pkgs pipeline's *manifest*
+checks (schema + cross-file consistency) are reproducible off-Windows — only the
+final install-in-a-VM step needs Windows. Validate against the official schemas
+(published in `microsoft/winget-cli`, not winget-pkgs):
+
+```sh
+ver=1.12.0   # must match the ManifestVersion in the files
+base="https://raw.githubusercontent.com/microsoft/winget-cli/master/schemas/JSON/manifests/v$ver"
+uvx check-jsonschema --schemafile "$base/manifest.version.$ver.json"       packaging/winget/Kessriga.Flamberge.yaml
+uvx check-jsonschema --schemafile "$base/manifest.installer.$ver.json"     packaging/winget/Kessriga.Flamberge.installer.yaml
+uvx check-jsonschema --schemafile "$base/manifest.defaultLocale.$ver.json" packaging/winget/Kessriga.Flamberge.locale.en-US.yaml
+```
+
+⚠️ **All three files must declare the *same* `ManifestVersion`** — a multi-file
+manifest with mixed versions is rejected with "inconsistent field values". Note
+that `komac submit` may bump the schema to the newest version; if it bumps only
+some files, fix the rest to match (that is exactly what failed the first
+submission). Keeping the checked-in manifests on one current version avoids it.
+
+To read the real error from a failed PR (it lives in the Azure DevOps build, not
+the GitHub comments), open the "Validation Pipeline Run" link the bot posts, or
+fetch the failing step's log via the Azure DevOps REST API
+(`.../builds/<id>/timeline` → the `Validate Manifest` record's `log.url`).
+
 ### 5. Chocolatey (`choco install flamberge`)
 
 1. Register at <https://community.chocolatey.org> and create an API key.
