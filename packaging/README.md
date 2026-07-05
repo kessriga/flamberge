@@ -97,13 +97,45 @@ produces. Optionally register a short name in the mise registry so
 
 ### 4. winget (`winget install Kessriga.Flamberge`)
 
-1. Fork `microsoft/winget-pkgs`.
-2. Submit the three manifests in `packaging/winget/` under
-   `manifests/k/Kessriga/Flamberge/0.1.0/` (validate locally first with
-   `winget validate` / `wingetcreate`).
-3. Create a PAT with access to your `winget-pkgs` fork and add it as the secret
-   **`WINGET_TOKEN`**. The `winget` job (using `winget-releaser`) then opens the
-   bump PR for each subsequent release, preserving the nested-portable layout.
+Unlike Homebrew there is **no repo of your own to maintain** — manifests live in
+`microsoft/winget-pkgs`, and the three files in `packaging/winget/` are exactly
+what gets submitted. You do a one-time first submission; the `winget` job
+(`winget-releaser`) opens the version-bump PR for every release after that.
+
+1. **Fork winget-pkgs** — `winget-releaser` pushes its branch to your fork, then
+   PRs upstream:
+
+   ```sh
+   gh repo fork microsoft/winget-pkgs --clone=false
+   ```
+
+2. **Submit the initial manifests once.** The package must exist upstream before
+   automated bumps work. Validate, then submit the pre-written manifests:
+
+   ```sh
+   # cross-platform validator (Rust): https://github.com/russellbanks/Komac
+   komac submit --path packaging/winget
+   # …or on Windows with wingetcreate:
+   wingetcreate submit --token <PAT> packaging/winget
+   ```
+
+   Either opens a PR placing the files at
+   `manifests/k/Kessriga/Flamberge/0.1.0/`. (A hand-made PR to that path works
+   too.)
+
+3. **Token (`WINGET_TOKEN`).** `winget-releaser` needs a **classic PAT with the
+   `public_repo` scope** — the fork-and-cross-repo-PR flow it uses does *not*
+   work reliably with a fine-grained token, so this one differs from the
+   Homebrew tap token. Create it under *Settings → Developer settings → Tokens
+   (classic)* with only `public_repo` checked, then:
+
+   ```sh
+   gh secret set WINGET_TOKEN --repo kessriga/flamberge
+   # paste the PAT when prompted
+   ```
+
+   The job preserves the nested-portable-zip layout across bumps, so you only
+   author it once (step 2).
 
 ### 5. Chocolatey (`choco install flamberge`)
 
