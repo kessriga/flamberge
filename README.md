@@ -24,7 +24,7 @@ Dependency direction: `crypto` ← `formats`, `keys` ← `schemes` ← `cli`.
 ## Install
 
 **Pre-built binaries.** Each tagged release attaches an optimized `flamberge`
-binary for Linux (`x86_64`), macOS (Apple Silicon + Intel), and Windows
+binary for Linux (`x86_64`), macOS (Apple Silicon), and Windows
 (`x86_64`). Download the archive for your platform from the
 [Releases](https://github.com/kessriga/flamberge/releases) page, unpack it, and
 put `flamberge` on your `PATH`.
