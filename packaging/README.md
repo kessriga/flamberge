@@ -172,19 +172,28 @@ moderation or PR queue** (unlike Chocolatey / winget). The manifest is
 # 1. create the public bucket repo (the `scoop-` prefix is the convention)
 gh repo create kessriga/scoop-flamberge --public -d "Scoop bucket for flamberge"
 
-# 2. seed it: manifests live under bucket/
+# 2. seed it: manifests live under bucket/, the auto-updater under .github/workflows/
 git clone https://github.com/kessriga/scoop-flamberge bucket
-mkdir -p bucket/bucket
+mkdir -p bucket/bucket bucket/.github/workflows
 cp packaging/scoop/flamberge.json bucket/bucket/flamberge.json
 cp packaging/scoop/README.md      bucket/README.md
+cp packaging/scoop/excavator.yml  bucket/.github/workflows/excavator.yml
 ( cd bucket && git add -A && git commit -m "flamberge 0.1.0" && git push )
 ```
 
 Users then run `scoop bucket add flamberge https://github.com/kessriga/scoop-flamberge`
-+ `scoop install flamberge`. The manifest's `checkver`+`autoupdate` read the new
-version's SHA-256 straight from the release's `SHA256SUMS`, so no CI secret and
-no manual hash edits are needed here — optionally copy the `excavator` workflow
-from `ScoopInstaller/BucketTemplate` into the bucket to auto-bump on a schedule.
++ `scoop install flamberge`.
+
+**Keeping it current — the excavator is required, not optional.** A Scoop
+manifest is pinned to whatever version is committed; `checkver`+`autoupdate`
+describe *how* to find and build the next version, but something has to run them.
+That something is the `excavator` workflow (`packaging/scoop/excavator.yml` →
+`.github/workflows/excavator.yml` in the bucket): on a schedule it runs
+checkver/autoupdate, reads the new SHA-256 from the release's `SHA256SUMS`, and
+commits the bumped manifest — using the bucket's built-in `GITHUB_TOKEN`, so
+there is no secret to add. Without it, `scoop install flamberge` stays on the
+committed version even after you ship a new release. (You can also trigger it
+on demand with `gh workflow run Excavator --repo kessriga/scoop-flamberge`.)
 
 ### 6. Chocolatey (`choco install flamberge`)
 

@@ -1,0 +1,31 @@
+# Scoop auto-update ("excavator"). Copy this into the bucket repo
+# (kessriga/scoop-flamberge) at .github/workflows/excavator.yml.
+#
+# On a schedule it runs each manifest's `checkver` + `autoupdate`, so a new
+# flamberge release is picked up automatically: it bumps the version, rewrites
+# the download URL, and pulls the new SHA-256 from the release's SHA256SUMS, then
+# commits the updated manifest. Uses the repo's built-in GITHUB_TOKEN — no extra
+# secret to configure.
+name: Excavator
+
+on:
+  workflow_dispatch:
+  schedule:
+    # run every 4 hours
+    - cron: '20 */4 * * *'
+
+permissions:
+  contents: write
+
+jobs:
+  excavate:
+    name: Excavate
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Excavate
+        uses: ScoopInstaller/GithubActions@main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SKIP_UPDATED: 1

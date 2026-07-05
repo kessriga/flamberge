@@ -19,12 +19,11 @@ scoop update flamberge
 
 ## Notes
 
-- `bucket/flamberge.json` carries `checkver` + `autoupdate`, so the manifest can
-  auto-bump to new [flamberge releases](https://github.com/kessriga/flamberge/releases)
-  (version, download URL, and SHA-256 read from the release's `SHA256SUMS`).
-- To run the auto-update on a schedule, copy the `.github/workflows/` from
-  [`ScoopInstaller/BucketTemplate`](https://github.com/ScoopInstaller/BucketTemplate)
-  (the `excavator` workflow) into this repo.
+- `bucket/flamberge.json` carries `checkver` + `autoupdate`, and the
+  `.github/workflows/excavator.yml` workflow runs them on a schedule — so new
+  [flamberge releases](https://github.com/kessriga/flamberge/releases) are picked
+  up automatically (version, download URL, and SHA-256 from the release's
+  `SHA256SUMS`), with no manual edits.
 
 ## License
 
