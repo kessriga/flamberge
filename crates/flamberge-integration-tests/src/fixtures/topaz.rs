@@ -12,10 +12,10 @@
 //! `flamberge_formats::topaz_container::read_encoded_number`). No real book is
 //! embedded (see [`crate::fixtures`]).
 
-use std::io::Write;
-
 use flamberge_crypto::topaz::TopazCipher;
 use flamberge_schemes::KeyStore;
+
+use super::zlib;
 
 const KEY_LEN: usize = 8;
 const DKEY_SUBRECORD_LEN: usize = 24;
@@ -73,12 +73,6 @@ fn encode_lp_string(s: &[u8]) -> Vec<u8> {
     out
 }
 
-fn zlib_deflate(data: &[u8]) -> Vec<u8> {
-    let mut e = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
-    e.write_all(data).unwrap();
-    e.finish().unwrap()
-}
-
 /// A dkey sub-record encrypted under `pid` embedding `book_key`.
 fn dkey_subrecord(pid: &[u8; KEY_LEN], book_key: &[u8; KEY_LEN]) -> Vec<u8> {
     let mut sub = Vec::new();
@@ -111,7 +105,7 @@ fn payload_record(name: &[u8], index: usize, encrypted: bool, stored: &[u8]) -> 
 /// compressed_len)`.
 fn encrypted_page(content: &[u8], compressed: bool) -> (Vec<u8>, u64, u64) {
     let staged = if compressed {
-        zlib_deflate(content)
+        zlib(content)
     } else {
         content.to_vec()
     };

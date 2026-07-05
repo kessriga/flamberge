@@ -11,17 +11,14 @@
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
-use flamberge_crypto::{aes, digest, rc4};
+use flamberge_crypto::{digest, rc4};
 use flamberge_formats::pdf::PdfDocument;
 use flamberge_schemes::KeyStore;
 use rand::SeedableRng;
 use rsa::pkcs1::EncodeRsaPrivateKey;
-use rsa::traits::PublicKeyParts;
-use rsa::{BigUint, RsaPrivateKey};
+use rsa::RsaPrivateKey;
 
-use super::{pkcs7_pad, raw_deflate};
-
-const ADEPT_NS: &str = "http://ns.adobe.com/adept";
+use super::{bn_wrap, raw_deflate, rights_xml, rsa_wrap_pkcs1, user_key_from_cchash, zlib};
 
 /// A synthesized EBX_HANDLER PDF plus the keys to decrypt it.
 pub struct PdfFixture {
@@ -57,53 +54,14 @@ fn rc4_obj(book_key: &[u8; 16], version: u8, objid: u32, genno: u16, data: &[u8]
     rc4::apply(&genkey(version, book_key, objid, genno), data)
 }
 
-fn zlib(data: &[u8]) -> Vec<u8> {
-    use std::io::Write;
-    let mut e = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
-    e.write_all(data).unwrap();
-    e.finish().unwrap()
-}
-
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-fn rights_xml(encrypted_key_b64: &str) -> Vec<u8> {
-    format!(
-        "<?xml version=\"1.0\"?>\
-         <adept:rights xmlns:adept=\"{ADEPT_NS}\">\
-         <adept:licenseToken><adept:encryptedKey>{encrypted_key_b64}</adept:encryptedKey>\
-         </adept:licenseToken></adept:rights>"
-    )
-    .into_bytes()
 }
 
 /// The `ADEPT_LICENSE` string value: base64(deflate(-15, rights_xml(base64(wrapped)))).
 fn adept_license_value(wrapped: &[u8]) -> String {
     let xml = rights_xml(&STANDARD.encode(wrapped));
     STANDARD.encode(raw_deflate(&xml))
-}
-
-/// Textbook RSA public op wrapping a PKCS#1 block whose trailing 16 bytes are
-/// `book_key` (`\x00` separator at `[-17]`).
-fn adept_wrap(key: &RsaPrivateKey, book_key: &[u8; 16]) -> Vec<u8> {
-    let modn = key.size();
-    let mut block = vec![0x00, 0x02];
-    block.extend(std::iter::repeat_n(0xFFu8, modn - book_key.len() - 3));
-    block.push(0x00);
-    block.extend_from_slice(book_key);
-    let c = BigUint::from_bytes_be(&block).modpow(key.e(), key.n());
-    let raw = c.to_bytes_be();
-    let mut out = vec![0u8; modn - raw.len()];
-    out.extend_from_slice(&raw);
-    out
-}
-
-/// B&N zero-IV AES wrap of `0xAA*16 || book_key`, keyed by the user key. 48 bytes.
-fn bn_wrap(user_key: &[u8; 16], book_key: &[u8; 16]) -> Vec<u8> {
-    let mut plain = vec![0xAAu8; 16];
-    plain.extend_from_slice(book_key);
-    aes::cbc_encrypt(user_key, &[0u8; 16], &pkcs7_pad(&plain, 16)).unwrap()
 }
 
 /// Build a classic-xref EBX_HANDLER PDF (obj4 Flate content, obj5 hex string,
@@ -185,7 +143,7 @@ pub fn adept() -> PdfFixture {
     let book_key = [0x9Cu8; 16];
     let key = seeded_rsa();
     let der = key.to_pkcs1_der().unwrap().as_bytes().to_vec();
-    let license = adept_license_value(&adept_wrap(&key, &book_key));
+    let license = adept_license_value(&rsa_wrap_pkcs1(&key, &book_key));
     let page = b"BT /F1 12 Tf (Chapter one, now readable.) Tj ET".to_vec();
     let secret = b"Secret /Info string, decrypted.".to_vec();
     let pdf = build_ebx_pdf(&book_key, 2, 4, &license, &page, &secret);
@@ -217,9 +175,7 @@ pub fn ignoble() -> PdfFixture {
     let book_key = [0x77u8; 16];
     let cchash =
         flamberge_keys::ignoble::generate_key("Ada Lovelace", "4111 1111 1111 1111").unwrap();
-    let raw = STANDARD.decode(&cchash).unwrap();
-    let mut user_key = [0u8; 16];
-    user_key.copy_from_slice(&raw[..16]);
+    let user_key = user_key_from_cchash(&cchash);
     let license = adept_license_value(&bn_wrap(&user_key, &book_key));
     let page = b"B&N page content".to_vec();
     let secret = b"B&N secret".to_vec();

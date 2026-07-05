@@ -35,7 +35,10 @@ pub struct KoboFixture {
     pub kepub: Vec<u8>,
     /// A `KeyStore` carrying candidate user keys and the library DB bytes.
     pub keys: KeyStore,
-    /// A `KeyStore` with no user keys (but the DB present), for the negative test.
+    /// A `KeyStore` with a present-but-wrong user key (and the DB), for the
+    /// negative test — so the scheme's per-key unwrap + `content::check`
+    /// validation actually runs and rejects, rather than short-circuiting on an
+    /// empty key list.
     pub wrong_keys: KeyStore,
     /// The encrypted member's path.
     pub xhtml_path: &'static str,
@@ -113,9 +116,11 @@ pub fn fixture() -> KoboFixture {
         kobo_db: Some(sqlite.clone()),
         ..KeyStore::default()
     };
-    // No user keys, but the DB is present → nothing can unwrap the page key.
+    // A present-but-wrong user key: the scheme unwraps a bad page key, decrypts
+    // the member to garbage, and `content::check` rejects it — exercising real
+    // wrong-key rejection rather than the empty-key short-circuit.
     let wrong_keys = KeyStore {
-        kobo_keys: Vec::new(),
+        kobo_keys: vec![[0xABu8; 16]],
         kobo_db: Some(sqlite),
         ..KeyStore::default()
     };

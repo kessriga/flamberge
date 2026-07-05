@@ -20,13 +20,11 @@ use flamberge_schemes::KeyStore;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use rsa::pkcs1::EncodeRsaPrivateKey;
-use rsa::traits::PublicKeyParts;
-use rsa::{BigUint, RsaPrivateKey};
+use rsa::RsaPrivateKey;
 
-use super::{pkcs7_pad, raw_deflate};
-
-const B64: base64::engine::general_purpose::GeneralPurpose =
-    base64::engine::general_purpose::STANDARD;
+use super::{
+    bn_wrap, pkcs7_pad, raw_deflate, rights_xml, rsa_wrap_pkcs1, user_key_from_cchash, B64,
+};
 
 /// `(member path, bytes)` pairs — either ZIP members to build or expected plaintext.
 type NamedBytes = Vec<(&'static str, Vec<u8>)>;
@@ -57,18 +55,6 @@ fn encrypt_member(book_key: &[u8; 16], content: &[u8], deflate: bool) -> Vec<u8>
     let mut out = iv.to_vec();
     out.extend_from_slice(&ct);
     out
-}
-
-/// A minimal `rights.xml` carrying the base64 wrapped book key.
-fn rights_xml(key_b64: &str) -> Vec<u8> {
-    const ADEPT_NS: &str = "http://ns.adobe.com/adept";
-    format!(
-        "<?xml version=\"1.0\"?>\
-         <adept:rights xmlns:adept=\"{ADEPT_NS}\">\
-         <adept:licenseToken><adept:encryptedKey>{key_b64}</adept:encryptedKey>\
-         </adept:licenseToken></adept:rights>"
-    )
-    .into_bytes()
 }
 
 /// An `encryption.xml` listing each encrypted member path.
@@ -114,28 +100,6 @@ fn epub_members(content_key: &[u8; 16], wrapped_b64: &str) -> (NamedBytes, Named
 
 // --- ADEPT ---------------------------------------------------------------
 
-/// Textbook RSA public op (`m^e mod n`) to wrap a block — inverse of the
-/// scheme's private decrypt.
-fn rsa_wrap(key: &RsaPrivateKey, block: &[u8]) -> Vec<u8> {
-    let c = BigUint::from_bytes_be(block).modpow(key.e(), key.n());
-    let raw = c.to_bytes_be();
-    let mut out = vec![0u8; key.size() - raw.len()];
-    out.extend_from_slice(&raw);
-    out
-}
-
-/// A PKCS#1 v1.5 encryption block `00 02 <FF padding> 00 <payload>`.
-fn pkcs1_block(modulus_bytes: usize, payload: &[u8]) -> Vec<u8> {
-    let mut b = vec![0x00, 0x02];
-    b.extend(std::iter::repeat_n(
-        0xFFu8,
-        modulus_bytes - payload.len() - 3,
-    ));
-    b.push(0x00);
-    b.extend_from_slice(payload);
-    b
-}
-
 /// A reproducible RSA key (seeded so the wrong-key `[-17]` check is deterministic).
 fn rsa_key(seed: u64) -> RsaPrivateKey {
     RsaPrivateKey::new(&mut StdRng::seed_from_u64(seed), 1024).expect("keygen")
@@ -148,7 +112,7 @@ pub fn adept() -> EpubFixture {
     let key = rsa_key(1);
     let der = key.to_pkcs1_der().unwrap().as_bytes().to_vec();
 
-    let wrapped = rsa_wrap(&key, &pkcs1_block(key.size(), &content_key));
+    let wrapped = rsa_wrap_pkcs1(&key, &content_key);
     let wrapped_b64 = B64.encode(&wrapped);
     assert_eq!(
         wrapped_b64.len(),
@@ -177,21 +141,10 @@ pub fn adept() -> EpubFixture {
 
 // --- Barnes & Noble ------------------------------------------------------
 
-/// The first 16 bytes of the base64-decoded ccHash — the AES user key.
-fn user_key_from_cchash(cchash: &str) -> [u8; 16] {
-    let raw = B64.decode(cchash).unwrap();
-    let mut k = [0u8; 16];
-    k.copy_from_slice(&raw[..16]);
-    k
-}
-
-/// Wrap the book key as B&N stores it: `AES-128-CBC(user_key, 0, pkcs7(0xAA*16
-/// || book_key))`, base64 (64 chars). The book key is the last 16 plaintext bytes.
+/// The base64 (64-char) `rights.xml` wrapped key — the shared raw [`bn_wrap`]
+/// bytes, base64-encoded, with the format's length invariant asserted.
 fn wrap_book_key(user_key: &[u8; 16], book_key: &[u8; 16]) -> String {
-    let mut plain = vec![0xAAu8; 16];
-    plain.extend_from_slice(book_key);
-    let wrapped = aes::cbc_encrypt(user_key, &[0u8; 16], &pkcs7_pad(&plain, 16)).unwrap();
-    let b64 = B64.encode(&wrapped);
+    let b64 = B64.encode(bn_wrap(user_key, book_key));
     assert_eq!(b64.len(), ocf::BN_KEY_LEN, "wrapped key must be 64 chars");
     b64
 }

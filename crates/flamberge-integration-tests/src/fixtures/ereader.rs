@@ -13,11 +13,11 @@
 //! already covered by that scheme's unit tests. No real book is embedded (see
 //! [`crate::fixtures`]).
 
-use std::io::Write;
-
 use flamberge_crypto::{des, digest};
 use flamberge_keys::ereader::user_key as gen_user_key;
 use flamberge_schemes::KeyStore;
+
+use super::zlib;
 
 /// A synthesized eReader book plus the keys to decrypt it.
 pub struct EreaderFixture {
@@ -44,12 +44,6 @@ fn put16(v: &mut [u8], off: usize, x: u16) {
 }
 fn put32(v: &mut [u8], off: usize, x: u32) {
     v[off..off + 4].copy_from_slice(&x.to_be_bytes());
-}
-
-fn zlib(data: &[u8]) -> Vec<u8> {
-    let mut e = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
-    e.write_all(data).unwrap();
-    e.finish().unwrap()
 }
 
 fn pad8(mut v: Vec<u8>) -> Vec<u8> {

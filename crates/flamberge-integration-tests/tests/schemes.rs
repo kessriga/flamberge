@@ -43,8 +43,9 @@ fn kobo_round_trip() {
 }
 
 #[test]
-fn kobo_no_user_key_fails_cleanly() {
+fn kobo_wrong_key_fails_cleanly() {
     let f = fixtures::kobo::fixture();
+    // A present-but-wrong user key must be tried and rejected by content::check.
     assert!(matches!(
         decrypt(&f.kepub, "kepub", &f.wrong_keys),
         Err(SchemeError::NoKeyWorked)

@@ -23,6 +23,10 @@
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 
+use base64::Engine;
+use flamberge_crypto::aes;
+use rsa::traits::PublicKeyParts;
+use rsa::{BigUint, RsaPrivateKey};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
@@ -33,6 +37,12 @@ pub mod kobo;
 pub mod mobipocket;
 pub mod pdf;
 pub mod topaz;
+
+const B64: base64::engine::general_purpose::GeneralPurpose =
+    base64::engine::general_purpose::STANDARD;
+
+/// XML namespace for the Adobe ADEPT `rights.xml` elements.
+pub const ADEPT_NS: &str = "http://ns.adobe.com/adept";
 
 /// Append PKCS#7 padding out to a whole `block`.
 pub fn pkcs7_pad(data: &[u8], block: usize) -> Vec<u8> {
@@ -85,5 +95,61 @@ pub fn read_zip(bytes: &[u8]) -> BTreeMap<String, Vec<u8>> {
         f.read_to_end(&mut b).unwrap();
         out.insert(name, b);
     }
+    out
+}
+
+/// zlib-wrapped DEFLATE (RFC 1950, with header/checksum) — the inverse of the
+/// zlib inflate the PDF content-stream, eReader page, and Topaz page decoders
+/// apply. Distinct from [`raw_deflate`] (headerless, `windowBits = -15`).
+pub fn zlib(data: &[u8]) -> Vec<u8> {
+    let mut e = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    e.write_all(data).unwrap();
+    e.finish().unwrap()
+}
+
+/// A minimal ADEPT `rights.xml` carrying the base64 wrapped book key inside
+/// `adept:licenseToken/adept:encryptedKey` (§4.4/§7.3). Shared by the EPUB and
+/// EBX_HANDLER-PDF fixtures.
+pub fn rights_xml(key_b64: &str) -> Vec<u8> {
+    format!(
+        "<?xml version=\"1.0\"?>\
+         <adept:rights xmlns:adept=\"{ADEPT_NS}\">\
+         <adept:licenseToken><adept:encryptedKey>{key_b64}</adept:encryptedKey>\
+         </adept:licenseToken></adept:rights>"
+    )
+    .into_bytes()
+}
+
+/// The B&N AES user key: the first 16 bytes of the base64-decoded ccHash (§4.4).
+pub fn user_key_from_cchash(cchash: &str) -> [u8; 16] {
+    let raw = B64.decode(cchash).unwrap();
+    let mut k = [0u8; 16];
+    k.copy_from_slice(&raw[..16]);
+    k
+}
+
+/// B&N book-key wrap: `AES-128-CBC(user_key, zero IV, pkcs7(0xAA*16 || book_key))`
+/// — 48 raw ciphertext bytes (§4.4). Callers base64-encode as needed.
+pub fn bn_wrap(user_key: &[u8; 16], book_key: &[u8; 16]) -> Vec<u8> {
+    let mut plain = vec![0xAAu8; 16];
+    plain.extend_from_slice(book_key);
+    aes::cbc_encrypt(user_key, &[0u8; 16], &pkcs7_pad(&plain, 16)).unwrap()
+}
+
+/// Textbook RSA public op (`m^e mod n`, left-zero-padded to the modulus length)
+/// over a PKCS#1 v1.5 encryption block `00 02 <FF padding> 00 <payload>` — the
+/// inverse of the ADEPT scheme's private decrypt. Shared by the ADEPT EPUB and
+/// PDF fixtures.
+pub fn rsa_wrap_pkcs1(key: &RsaPrivateKey, payload: &[u8]) -> Vec<u8> {
+    let modn = key.size();
+    let mut block = vec![0x00, 0x02];
+    block.extend(std::iter::repeat_n(0xFFu8, modn - payload.len() - 3));
+    block.push(0x00);
+    block.extend_from_slice(payload);
+
+    let c = BigUint::from_bytes_be(&block).modpow(key.e(), key.n());
+    let raw = c.to_bytes_be();
+    let mut out = vec![0u8; modn - raw.len()];
+    out.extend_from_slice(&raw);
     out
 }
