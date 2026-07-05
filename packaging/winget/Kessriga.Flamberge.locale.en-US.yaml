@@ -2,14 +2,14 @@
 PackageIdentifier: Kessriga.Flamberge
 PackageVersion: 0.1.0
 PackageLocale: en-US
-Publisher: Kessriga Jeukal
+Publisher: Kessriga Jeükal
 PublisherUrl: https://github.com/kessriga
 PublisherSupportUrl: https://github.com/kessriga/flamberge/issues
 PackageName: flamberge
 PackageUrl: https://github.com/kessriga/flamberge
 License: MIT
 LicenseUrl: https://github.com/kessriga/flamberge/blob/main/LICENSE
-Copyright: Copyright (c) 2026 Kessriga Jeukal
+Copyright: Copyright (c) 2026 Kessriga Jeükal
 ShortDescription: Command-line DRM removal for ebooks (DeDRM_tools, reimplemented in Rust)
 Description: >-
   flamberge removes DRM from ebooks, reimplementing the DeDRM_tools Calibre

@@ -1,4 +1,4 @@
-# Maintainer: Kessriga Jeukal <kessriga.jeukal@proton.me>
+# Maintainer: Kessriga Jeükal <kessriga.jeukal@proton.me>
 # AUR package `flamberge-bin`: installs the prebuilt x86_64 Linux release binary.
 # Publish to a separate AUR git repo named `flamberge-bin` (see packaging/README.md).
 pkgname=flamberge-bin

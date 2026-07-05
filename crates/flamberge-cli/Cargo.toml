@@ -22,8 +22,8 @@ path = "src/main.rs"
 # locates automatically.
 [package.metadata.deb]
 name = "flamberge"
-maintainer = "Kessriga Jeukal <kessriga.jeukal@proton.me>"
-copyright = "2026, Kessriga Jeukal <kessriga.jeukal@proton.me>"
+maintainer = "Kessriga Jeükal <kessriga.jeukal@proton.me>"
+copyright = "2026, Kessriga Jeükal <kessriga.jeukal@proton.me>"
 license-file = ["../../LICENSE", "0"]
 section = "utils"
 priority = "optional"

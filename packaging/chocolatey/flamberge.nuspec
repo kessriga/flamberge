@@ -8,7 +8,7 @@
     <packageSourceUrl>https://github.com/kessriga/flamberge/tree/main/packaging/chocolatey</packageSourceUrl>
     <owners>kessriga</owners>
     <title>flamberge (Install)</title>
-    <authors>Kessriga Jeukal</authors>
+    <authors>Kessriga Jeükal</authors>
     <projectUrl>https://github.com/kessriga/flamberge</projectUrl>
     <projectSourceUrl>https://github.com/kessriga/flamberge</projectSourceUrl>
     <docsUrl>https://github.com/kessriga/flamberge#readme</docsUrl>

@@ -16,7 +16,7 @@ rust-version = "1.85"
 license = "MIT"
 repository = "https://github.com/kessriga/flamberge"
 homepage = "https://github.com/kessriga/flamberge"
-authors = ["Kessriga Jeukal"]
+authors = ["Kessriga Jeükal"]
 
 # Shared dependency versions. Individual crates opt in via `dep.workspace = true`.
 [workspace.dependencies]
