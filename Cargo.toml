@@ -10,7 +10,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 rust-version = "1.85"
 license = "MIT"
@@ -23,10 +23,10 @@ authors = ["Kessriga Jeükal"]
 # Workspace-internal. `version` alongside `path` is required for crates.io publish:
 # a published crate must depend on registry versions, so cargo substitutes the
 # version requirement when packaging while still using the local path for dev.
-flamberge-crypto = { path = "crates/flamberge-crypto", version = "0.1.0" }
-flamberge-formats = { path = "crates/flamberge-formats", version = "0.1.0" }
-flamberge-keys = { path = "crates/flamberge-keys", version = "0.1.0" }
-flamberge-schemes = { path = "crates/flamberge-schemes", version = "0.1.0" }
+flamberge-crypto = { path = "crates/flamberge-crypto", version = "0.1.1" }
+flamberge-formats = { path = "crates/flamberge-formats", version = "0.1.1" }
+flamberge-keys = { path = "crates/flamberge-keys", version = "0.1.1" }
+flamberge-schemes = { path = "crates/flamberge-schemes", version = "0.1.1" }
 
 # errors
 thiserror = "1"
