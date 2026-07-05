@@ -161,7 +161,32 @@ the GitHub comments), open the "Validation Pipeline Run" link the bot posts, or
 fetch the failing step's log via the Azure DevOps REST API
 (`.../builds/<id>/timeline` → the `Validate Manifest` record's `log.url`).
 
-### 5. Chocolatey (`choco install flamberge`)
+### 5. Scoop (`scoop install flamberge`)
+
+The quickest Windows channel: a bucket is just a git repo you own — **no
+moderation or PR queue** (unlike Chocolatey / winget). The manifest is
+`packaging/scoop/flamberge.json`; a ready-to-commit bucket `README.md` is in
+`packaging/scoop/`.
+
+```sh
+# 1. create the public bucket repo (the `scoop-` prefix is the convention)
+gh repo create kessriga/scoop-flamberge --public -d "Scoop bucket for flamberge"
+
+# 2. seed it: manifests live under bucket/
+git clone https://github.com/kessriga/scoop-flamberge bucket
+mkdir -p bucket/bucket
+cp packaging/scoop/flamberge.json bucket/bucket/flamberge.json
+cp packaging/scoop/README.md      bucket/README.md
+( cd bucket && git add -A && git commit -m "flamberge 0.1.0" && git push )
+```
+
+Users then run `scoop bucket add flamberge https://github.com/kessriga/scoop-flamberge`
++ `scoop install flamberge`. The manifest's `checkver`+`autoupdate` read the new
+version's SHA-256 straight from the release's `SHA256SUMS`, so no CI secret and
+no manual hash edits are needed here — optionally copy the `excavator` workflow
+from `ScoopInstaller/BucketTemplate` into the bucket to auto-bump on a schedule.
+
+### 6. Chocolatey (`choco install flamberge`)
 
 1. Register at <https://community.chocolatey.org> and create an API key.
 2. Add it as the secret **`CHOCO_API_KEY`**.
@@ -170,13 +195,19 @@ fetch the failing step's log via the Azure DevOps REST API
    goes through Chocolatey moderation (the `VERIFICATION.txt` documents the
    checksum provenance moderators check).
 
-### 6. Linux distro packages
+### 7. Linux distro packages
 
 - **`.deb` / `.rpm`** — already attached to every release; install with
   `dpkg -i` / `rpm -i` or point an apt/dnf repo at them.
 - **AUR (`flamberge-bin`)** — create an AUR git repo named `flamberge-bin` and
   push `packaging/aur/PKGBUILD` + `.SRCINFO`. Regenerate `.SRCINFO` after edits
-  with `makepkg --printsrcinfo > .SRCINFO`.
+  with `makepkg --printsrcinfo > .SRCINFO`. (AUR account registration may be
+  temporarily closed; defer until it reopens.)
+- **Fedora COPR** — host the `.rpm` as a real `dnf` repo: create a COPR project
+  and upload the release `.rpm` (or point COPR at the release). Users then
+  `dnf copr enable kessriga/flamberge && dnf install flamberge`.
+- **Nix** — a `flake.nix` at the repo root gives `nix run github:kessriga/flamberge`
+  with no registry; a nixpkgs submission is a larger, separate effort.
 
 ## Propagating a new release
 

@@ -31,6 +31,7 @@ Pick your platform's package manager:
 | **Homebrew** | `brew install kessriga/flamberge/flamberge` | macOS (Apple Silicon), Linux (`x86_64`) |
 | **mise** | `mise use -g ubi:kessriga/flamberge` | Linux, macOS, Windows |
 | **winget** | `winget install Kessriga.Flamberge` | Windows (`x86_64`) |
+| **Scoop** | `scoop bucket add flamberge https://github.com/kessriga/scoop-flamberge` then `scoop install flamberge` | Windows (`x86_64`) |
 | **Chocolatey** | `choco install flamberge` | Windows (`x86_64`) |
 | **Arch (AUR)** | `yay -S flamberge-bin` | Linux (`x86_64`) |
 | **Debian/Ubuntu** | `dpkg -i flamberge_<ver>_amd64.deb` (from Releases) | Linux (`x86_64`) |
