@@ -57,14 +57,34 @@ publish claims them.
 
 ### 2. Homebrew (`brew install kessriga/flamberge/flamberge`)
 
-1. Create a public repo **`kessriga/homebrew-flamberge`** (the `homebrew-`
-   prefix makes it a tap).
-2. Seed it once: `packaging/scripts/update-homebrew-formula.sh v0.1.0
-   /path/to/tap/Formula/flamberge.rb`, commit, push. (The committed
-   `packaging/homebrew/flamberge.rb` is the same content for reference.)
-3. Create a fine-grained PAT with `contents: write` on the tap repo and add it
-   as the secret **`HOMEBREW_TAP_TOKEN`**. The `homebrew` job then regenerates
-   and pushes the formula on every release.
+The only required file in the tap is `Formula/flamberge.rb`. A ready-to-commit
+`README.md` and `LICENSE` for the tap live in `packaging/homebrew/tap/`.
+
+```sh
+# 1. create the public tap repo (the `homebrew-` prefix makes it a tap)
+gh repo create kessriga/homebrew-flamberge --public -d "Homebrew tap for flamberge"
+
+# 2. seed it: the formula + the ready-made README/LICENSE
+git clone https://github.com/kessriga/homebrew-flamberge tap
+mkdir -p tap/Formula
+cp packaging/homebrew/flamberge.rb   tap/Formula/flamberge.rb
+cp packaging/homebrew/tap/README.md  tap/README.md
+cp packaging/homebrew/tap/LICENSE    tap/LICENSE
+( cd tap && git add -A && git commit -m "flamberge 0.1.0" && git push )
+```
+
+3. Create a **fine-grained PAT** (Settings → Developer settings → Fine-grained
+   tokens) scoped to **only the `kessriga/homebrew-flamberge` repo** with
+   **Repository permissions → Contents: Read and write** (nothing else). Add it
+   as the secret **`HOMEBREW_TAP_TOKEN`**:
+
+   ```sh
+   gh secret set HOMEBREW_TAP_TOKEN --repo kessriga/flamberge
+   # paste the PAT when prompted (or: gh secret set HOMEBREW_TAP_TOKEN --repo kessriga/flamberge --body "<pat>")
+   ```
+
+   The `homebrew` job then regenerates and force-pushes `Formula/flamberge.rb`
+   on every release (leaving the README/LICENSE untouched).
 
 Users on macOS-arm64 and Linux-x86_64 are covered (the two release targets).
 
