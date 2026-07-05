@@ -8,6 +8,9 @@ pkgdesc="Command-line DRM removal for ebooks (DeDRM_tools, reimplemented in Rust
 arch=('x86_64')
 url="https://github.com/kessriga/flamberge"
 license=('MIT')
+# The release binary is a glibc dynamic build linking libc/libm (glibc) and
+# libgcc_s (gcc-libs); see `readelf -d`.
+depends=('glibc' 'gcc-libs')
 provides=('flamberge')
 conflicts=('flamberge')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/kessriga/flamberge/releases/download/v${pkgver}/flamberge-v${pkgver}-x86_64-unknown-linux-gnu.tar.gz")
