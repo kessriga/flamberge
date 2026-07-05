@@ -1,10 +1,10 @@
 ---
 id: TASK-23
 title: Dedupe Kobo SQLite WAL-patch open helper across keys/schemes
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-04 20:53'
-updated_date: '2026-07-05 08:07'
+updated_date: '2026-07-05 08:11'
 labels:
   - keys
   - schemes
@@ -75,6 +75,8 @@ Removed the duplicate private `open_patched` from both crates; dropped the now-u
 Deduped the "open a WAL-mode Kobo SQLite DB from an in-memory byte buffer" trick that was copied byte-for-byte in `flamberge-keys::kobo::db` and `flamberge-schemes::kobo::db`.
 
 The logic now lives once as `flamberge_keys::kobo::open_kobo_db(Vec<u8>) -> Result<(NamedTempFile, Connection), KoboDbError>`, chosen over `flamberge-formats` because keys already pays for `rusqlite`+`tempfile` while formats depends on neither (option 2 would push bundled-SQLite into the crate everything depends on). The helper returns a neutral `KoboDbError` so each caller maps it onto its own error type (`KeyError` vs `SchemeError`) with no cross-crate error coupling; the surfaced messages are byte-identical to before, so Kobo discovery and Kobo KEPUB decryption behave identically. Both crates' Kobo tests and the cross-scheme integration round-trips stay green; fmt/clippy(-D warnings)/build/test all clean.
+
+PR #24 opened; all CI checks green (fmt+clippy + build/test on Linux/macOS/Windows). Awaiting human-approved squash-merge (main is protected; the agent may not self-merge its own PR).
 <!-- SECTION:FINAL_SUMMARY:END -->
 
 ## Definition of Done
