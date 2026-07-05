@@ -1,0 +1,30 @@
+name: Nix
+
+# Verify the flake actually builds and the resulting binary runs. Kept separate
+# from ci.yml because it compiles the workspace under Nix (slower) and only needs
+# to gate changes that touch the flake or the build inputs.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  flake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: nix flake check
+        run: nix flake check -L
+
+      - name: nix build
+        run: nix build -L
+
+      - name: smoke-test the built binary
+        run: ./result/bin/flamberge --help

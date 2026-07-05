@@ -3,9 +3,9 @@ id: TASK-7
 title: Implement KFX voucher unwrap + content decryption
 status: Done
 assignee:
-  - Kessriga Jeukal
+  - Kessriga Jeükal
 created_date: '2026-07-03 19:56'
-updated_date: '2026-07-04 00:39'
+updated_date: '2026-07-05 15:25'
 labels:
   - schemes
   - formats

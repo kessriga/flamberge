@@ -1,0 +1,15 @@
+pkgbase = flamberge-bin
+	pkgdesc = Command-line DRM removal for ebooks (DeDRM_tools, reimplemented in Rust)
+	pkgver = 0.1.0
+	pkgrel = 1
+	url = https://github.com/kessriga/flamberge
+	arch = x86_64
+	license = MIT
+	depends = glibc
+	depends = gcc-libs
+	provides = flamberge
+	conflicts = flamberge
+	source = flamberge-bin-0.1.0.tar.gz::https://github.com/kessriga/flamberge/releases/download/v0.1.0/flamberge-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
+	sha256sums = b01bbff843eca2dc3da97507333b8e22501a17f6a22b190f3fe0b371fedf89a8
+
+pkgname = flamberge-bin

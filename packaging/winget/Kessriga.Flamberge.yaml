@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.version.1.12.0.schema.json
+# winget version manifest. Submit this file plus the installer and
+# defaultLocale manifests to microsoft/winget-pkgs under
+# manifests/k/Kessriga/Flamberge/0.1.0/. All three files MUST declare the same
+# ManifestVersion. See packaging/README.md.
+PackageIdentifier: Kessriga.Flamberge
+PackageVersion: 0.1.0
+DefaultLocale: en-US
+ManifestType: version
+ManifestVersion: 1.12.0

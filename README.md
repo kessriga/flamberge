@@ -17,28 +17,56 @@ The scheme-by-scheme algorithm reference this project is built from lives in
 | `flamberge-formats` | Container parsers: PalmDB, TPZ0, KFX-ZIP, ION, OCF/EPUB, PDF, PMLZ | Implemented + tested |
 | `flamberge-keys` | Key acquisition: PID gen, B&N/eReader/Kobo offline keygen, platform extraction | Generators + Kindle/Adobe(macOS)/Kobo extraction done; on-host Kindle machine-value gathering & Adobe Windows DPAPI stubbed |
 | `flamberge-schemes` | Per-scheme DRM removal, format dispatch | All schemes implemented + tested |
-| `flamberge-cli` | The `flamberge` binary (batch mode, `--auto-keys`, `keys` subcommands) | Implemented + tested |
+| `flamberge` | The `flamberge` binary (batch mode, `--auto-keys`, `keys` subcommands); crate dir `crates/flamberge-cli` | Implemented + tested |
 
 Dependency direction: `crypto` ← `formats`, `keys` ← `schemes` ← `cli`.
 
 ## Install
 
+Pick your platform's package manager:
+
+| Manager | Command | Platforms |
+| --- | --- | --- |
+| **cargo** (crates.io) | `cargo install flamberge` | any (builds from source) |
+| **Nix** | `nix profile install github:kessriga/flamberge` (or `nix run github:kessriga/flamberge`) | Linux, macOS |
+| **Homebrew** | `brew install kessriga/flamberge/flamberge` | macOS (Apple Silicon), Linux (`x86_64`) |
+| **mise** | `mise use -g ubi:kessriga/flamberge` | Linux, macOS, Windows |
+| **winget** | `winget install Kessriga.Flamberge` | Windows (`x86_64`) |
+| **Scoop** | `scoop bucket add flamberge https://github.com/kessriga/scoop-flamberge` then `scoop install flamberge` | Windows (`x86_64`) |
+| **Chocolatey** | `choco install flamberge` | Windows (`x86_64`) |
+| **Arch (AUR)** | `yay -S flamberge-bin` | Linux (`x86_64`) |
+| **Debian/Ubuntu** | `dpkg -i flamberge_<ver>_amd64.deb` (from Releases) | Linux (`x86_64`) |
+| **Fedora/RHEL** | `rpm -i flamberge-<ver>-1.x86_64.rpm` (from Releases) | Linux (`x86_64`) |
+
+> **Live now:** Nix, Scoop, mise, and the pre-built binaries (incl. `.deb`/`.rpm`).
+> The crates.io, Homebrew, winget, Chocolatey, and AUR entries are still being
+> registered (see [`packaging/README.md`](packaging/README.md)) — until each is
+> live, use one of the above or `cargo install --path` below.
+
 **Pre-built binaries.** Each tagged release attaches an optimized `flamberge`
-binary for Linux (`x86_64`), macOS (Apple Silicon), and Windows
-(`x86_64`). Download the archive for your platform from the
+binary for Linux (`x86_64`), macOS (Apple Silicon), and Windows (`x86_64`),
+along with `.deb`/`.rpm` packages and a `SHA256SUMS` file for verification.
+Download the archive for your platform from the
 [Releases](https://github.com/kessriga/flamberge/releases) page, unpack it, and
 put `flamberge` on your `PATH`.
 
 **From source** (needs Rust ≥ 1.85):
 
 ```sh
-# Install the CLI into ~/.cargo/bin
+# Install the published CLI from crates.io
+cargo install flamberge
+
+# …or install from a local checkout
 cargo install --path crates/flamberge-cli
 
 # …or just build/test the workspace in place
 cargo build --release   # binary at target/release/flamberge
 cargo test
 ```
+
+Packaging definitions and the release-to-manager automation live under
+[`packaging/`](packaging/); every tagged release propagates the new version and
+checksums to the managers whose credentials are configured.
 
 ## Usage
 

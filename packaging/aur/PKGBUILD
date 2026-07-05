@@ -1,0 +1,24 @@
+# Maintainer: Kessriga Jeükal <kessriga.jeukal@proton.me>
+# AUR package `flamberge-bin`: installs the prebuilt x86_64 Linux release binary.
+# Publish to a separate AUR git repo named `flamberge-bin` (see packaging/README.md).
+pkgname=flamberge-bin
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Command-line DRM removal for ebooks (DeDRM_tools, reimplemented in Rust)"
+arch=('x86_64')
+url="https://github.com/kessriga/flamberge"
+license=('MIT')
+# The release binary is a glibc dynamic build linking libc/libm (glibc) and
+# libgcc_s (gcc-libs); see `readelf -d`.
+depends=('glibc' 'gcc-libs')
+provides=('flamberge')
+conflicts=('flamberge')
+source=("$pkgname-$pkgver.tar.gz::https://github.com/kessriga/flamberge/releases/download/v${pkgver}/flamberge-v${pkgver}-x86_64-unknown-linux-gnu.tar.gz")
+sha256sums=('b01bbff843eca2dc3da97507333b8e22501a17f6a22b190f3fe0b371fedf89a8')
+
+package() {
+  cd "flamberge-v${pkgver}-x86_64-unknown-linux-gnu"
+  install -Dm755 flamberge "$pkgdir/usr/bin/flamberge"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+}

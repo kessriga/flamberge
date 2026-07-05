@@ -1,0 +1,23 @@
+VERIFICATION
+
+Chocolatey moderators and users can verify that the binary distributed by this
+package is the one published by the upstream project.
+
+The package downloads its payload directly from the official GitHub release:
+
+  https://github.com/kessriga/flamberge/releases/download/v0.1.0/flamberge-v0.1.0-x86_64-pc-windows-msvc.zip
+
+Expected SHA256 (also recorded in the release's SHA256SUMS asset):
+
+  2521CCCADF4387B517625CB565F9556F3F37A1DA3307E4B0FA840BCC4E9329B5
+
+To verify manually (PowerShell):
+
+  Invoke-WebRequest -Uri <url above> -OutFile flamberge.zip
+  Get-FileHash flamberge.zip -Algorithm SHA256
+
+The checksum is embedded in tools\chocolateyInstall.ps1 and enforced at install
+time via Install-ChocolateyZipPackage's -Checksum64.
+
+flamberge is distributed under the MIT license:
+  https://github.com/kessriga/flamberge/blob/main/LICENSE
