@@ -1,0 +1,26 @@
+# winget default-locale manifest.
+PackageIdentifier: Kessriga.Flamberge
+PackageVersion: 0.1.0
+PackageLocale: en-US
+Publisher: Kessriga Jeukal
+PublisherUrl: https://github.com/kessriga
+PublisherSupportUrl: https://github.com/kessriga/flamberge/issues
+PackageName: flamberge
+PackageUrl: https://github.com/kessriga/flamberge
+License: MIT
+LicenseUrl: https://github.com/kessriga/flamberge/blob/main/LICENSE
+Copyright: Copyright (c) 2026 Kessriga Jeukal
+ShortDescription: Command-line DRM removal for ebooks (DeDRM_tools, reimplemented in Rust)
+Description: >-
+  flamberge removes DRM from ebooks, reimplementing the DeDRM_tools Calibre
+  plugins in Rust. It supports the Mobipocket, Topaz, KFX, Adobe ADEPT
+  (EPUB+PDF), Barnes & Noble (EPUB+PDF), eReader, and Kobo KEPUB schemes.
+Tags:
+  - drm
+  - ebook
+  - kindle
+  - epub
+  - calibre
+Moniker: flamberge
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

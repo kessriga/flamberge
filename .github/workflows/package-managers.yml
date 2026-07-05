@@ -1,0 +1,110 @@
+name: Package managers
+
+# Propagate a published release to the external package managers. Each job is a
+# no-op until the maintainer adds the corresponding secret, so this workflow is
+# safe to merge before any account exists. Triggered automatically when a release
+# is published (i.e. after release.yml has attached all assets), or manually for
+# a specific tag. See packaging/README.md for the one-time setup per manager.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to propagate (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+jobs:
+  # Opens/updates a microsoft/winget-pkgs PR. After the initial manual submission
+  # of packaging/winget/*, winget-releaser carries the nested-portable structure
+  # forward and only bumps the version + installer URL/hash.
+  winget:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate on WINGET_TOKEN
+        id: gate
+        run: echo "enabled=${{ secrets.WINGET_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+      - name: Submit to winget-pkgs
+        if: steps.gate.outputs.enabled == 'true'
+        uses: vedantmgoyal9/winget-releaser@v2
+        with:
+          identifier: Kessriga.Flamberge
+          installers-regex: '-pc-windows-msvc\.zip$'
+          release-tag: ${{ env.TAG }}
+          token: ${{ secrets.WINGET_TOKEN }}
+
+  # Regenerates the tap formula with the new tag's checksums (reusing the same
+  # script that maintains packaging/homebrew/flamberge.rb) and pushes it to the
+  # kessriga/homebrew-flamberge tap repo.
+  homebrew:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Gate on HOMEBREW_TAP_TOKEN
+        id: gate
+        run: echo "enabled=${{ secrets.HOMEBREW_TAP_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+      - name: Update tap formula
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/kessriga/homebrew-flamberge" tap
+          mkdir -p tap/Formula
+          bash packaging/scripts/update-homebrew-formula.sh "$TAG" tap/Formula/flamberge.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/flamberge.rb
+          if git diff --cached --quiet; then
+            echo "Formula already up to date."
+          else
+            git commit -m "flamberge ${TAG#v}"
+            git push
+          fi
+
+  # Renders the nuspec + install script for the tag, packs, and pushes to
+  # chocolatey.org. Runs on Windows because `choco` is Windows-only.
+  chocolatey:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Gate on CHOCO_API_KEY
+        id: gate
+        shell: bash
+        run: echo "enabled=${{ secrets.CHOCO_API_KEY != '' }}" >> "$GITHUB_OUTPUT"
+      - name: Pack and push
+        if: steps.gate.outputs.enabled == 'true'
+        shell: pwsh
+        env:
+          CHOCO_API_KEY: ${{ secrets.CHOCO_API_KEY }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = $env:TAG
+          $version = $tag.TrimStart('v')
+          $asset = "flamberge-$tag-x86_64-pc-windows-msvc.zip"
+          $url = "https://github.com/kessriga/flamberge/releases/download/$tag/$asset"
+
+          # Compute the checksum from the just-published release asset.
+          Invoke-WebRequest -Uri $url -OutFile $asset
+          $sha = (Get-FileHash $asset -Algorithm SHA256).Hash
+
+          Push-Location packaging/chocolatey
+          (Get-Content flamberge.nuspec) `
+            -replace '<version>.*?</version>', "<version>$version</version>" `
+            -replace 'releases/tag/v[0-9.]+', "releases/tag/$tag" |
+            Set-Content flamberge.nuspec
+          (Get-Content tools/chocolateyInstall.ps1) `
+            -replace "download/v[0-9.]+/flamberge-v[0-9.]+-x86_64-pc-windows-msvc\.zip", "download/$tag/$asset" `
+            -replace "(\`$checksum64\s*=\s*')[0-9A-Fa-f]+(')", "`${1}$sha`${2}" |
+            Set-Content tools/chocolateyInstall.ps1
+
+          choco pack
+          choco apikey --key $env:CHOCO_API_KEY --source https://push.chocolatey.org/
+          choco push "flamberge.$version.nupkg" --source https://push.chocolatey.org/
