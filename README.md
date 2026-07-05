@@ -28,6 +28,7 @@ Pick your platform's package manager:
 | Manager | Command | Platforms |
 | --- | --- | --- |
 | **cargo** (crates.io) | `cargo install flamberge` | any (builds from source) |
+| **Nix** | `nix profile install github:kessriga/flamberge` (or `nix run github:kessriga/flamberge`) | Linux, macOS |
 | **Homebrew** | `brew install kessriga/flamberge/flamberge` | macOS (Apple Silicon), Linux (`x86_64`) |
 | **mise** | `mise use -g ubi:kessriga/flamberge` | Linux, macOS, Windows |
 | **winget** | `winget install Kessriga.Flamberge` | Windows (`x86_64`) |
