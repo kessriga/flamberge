@@ -27,27 +27,33 @@ winget / Homebrew / Chocolatey jobs — each a no-op until its secret is set.
 Do the crates.io publish first: several other managers can point at it, and it
 is the lowest-maintenance channel.
 
-### 1. crates.io (`cargo install flamberge-cli`)
+### 1. crates.io (`cargo install flamberge`)
 
 The workspace is publish-ready: every crate has `description`, `license`,
 `repository`, `keywords`, `categories`, and the internal deps carry
-`version = "0.1.0"` alongside `path`.
+`version = "0.1.0"` alongside `path`. The CLI crate (dir `crates/flamberge-cli`)
+publishes under the name **`flamberge`** — matching the binary — so
+`cargo install flamberge` installs the `flamberge` command.
 
-1. Log in at <https://crates.io> and create an API token.
+1. Log in at <https://crates.io> and create an API token with the
+   **`publish-new`** and **`publish-update`** scopes (nothing else). Optionally
+   restrict its crate scope to the patterns `flamberge` and `flamberge-*`.
 2. Add it as the repo secret **`CARGO_REGISTRY_TOKEN`**
    (`gh secret set CARGO_REGISTRY_TOKEN`).
 3. Push a tag — the `crates.io` job publishes the five crates in dependency
-   order (`crypto → formats → keys → schemes → cli`).
+   order (`crypto → formats → keys → schemes → flamberge`).
 
 To publish once by hand instead:
 
 ```sh
-for c in flamberge-crypto flamberge-formats flamberge-keys flamberge-schemes flamberge-cli; do
+for c in flamberge-crypto flamberge-formats flamberge-keys flamberge-schemes flamberge; do
   cargo publish -p "$c"
 done
 ```
 
-The crate names are unregistered as of writing; the first publish claims them.
+The crate names (`flamberge`, `flamberge-crypto`, `flamberge-formats`,
+`flamberge-keys`, `flamberge-schemes`) are unregistered as of writing; the first
+publish claims them.
 
 ### 2. Homebrew (`brew install kessriga/flamberge/flamberge`)
 

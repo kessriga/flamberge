@@ -11,7 +11,7 @@ plus offline key generators and on-host key extraction for Kindle, Adobe, and Ko
 ## Install
 
 ```sh
-cargo install flamberge-cli      # installs the `flamberge` binary
+cargo install flamberge      # installs the `flamberge` binary
 ```
 
 Pre-built binaries, Homebrew, mise, winget, Chocolatey and Linux distro packages

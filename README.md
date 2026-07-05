@@ -17,7 +17,7 @@ The scheme-by-scheme algorithm reference this project is built from lives in
 | `flamberge-formats` | Container parsers: PalmDB, TPZ0, KFX-ZIP, ION, OCF/EPUB, PDF, PMLZ | Implemented + tested |
 | `flamberge-keys` | Key acquisition: PID gen, B&N/eReader/Kobo offline keygen, platform extraction | Generators + Kindle/Adobe(macOS)/Kobo extraction done; on-host Kindle machine-value gathering & Adobe Windows DPAPI stubbed |
 | `flamberge-schemes` | Per-scheme DRM removal, format dispatch | All schemes implemented + tested |
-| `flamberge-cli` | The `flamberge` binary (batch mode, `--auto-keys`, `keys` subcommands) | Implemented + tested |
+| `flamberge` | The `flamberge` binary (batch mode, `--auto-keys`, `keys` subcommands); crate dir `crates/flamberge-cli` | Implemented + tested |
 
 Dependency direction: `crypto` ← `formats`, `keys` ← `schemes` ← `cli`.
 
@@ -27,7 +27,7 @@ Pick your platform's package manager:
 
 | Manager | Command | Platforms |
 | --- | --- | --- |
-| **cargo** (crates.io) | `cargo install flamberge-cli` | any (builds from source) |
+| **cargo** (crates.io) | `cargo install flamberge` | any (builds from source) |
 | **Homebrew** | `brew install kessriga/flamberge/flamberge` | macOS (Apple Silicon), Linux (`x86_64`) |
 | **mise** | `mise use -g ubi:kessriga/flamberge` | Linux, macOS, Windows |
 | **winget** | `winget install Kessriga.Flamberge` | Windows (`x86_64`) |
@@ -51,7 +51,7 @@ put `flamberge` on your `PATH`.
 
 ```sh
 # Install the published CLI from crates.io
-cargo install flamberge-cli
+cargo install flamberge
 
 # …or install from a local checkout
 cargo install --path crates/flamberge-cli

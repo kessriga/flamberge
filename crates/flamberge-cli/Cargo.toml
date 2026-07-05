@@ -1,5 +1,7 @@
 [package]
-name = "flamberge-cli"
+# Published to crates.io as `flamberge` (the binary/command name); the crate
+# directory stays `crates/flamberge-cli` to describe its role in the workspace.
+name = "flamberge"
 description = "Command-line DRM removal for ebooks (Flamberge, reimplemented in Rust)"
 version.workspace = true
 edition.workspace = true

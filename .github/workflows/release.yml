@@ -38,7 +38,7 @@ jobs:
         run: rustup target add ${{ matrix.target }}
 
       - name: Build release binary
-        run: cargo build --release --locked -p flamberge-cli --target ${{ matrix.target }}
+        run: cargo build --release --locked -p flamberge --target ${{ matrix.target }}
 
       - name: Package (unix)
         if: runner.os != 'Windows'
@@ -73,9 +73,9 @@ jobs:
         run: |
           # cargo-deb/generate-rpm read from target/release; the matrix build
           # above targeted an explicit triple, so re-expose it at target/release.
-          cargo build --release --locked -p flamberge-cli
+          cargo build --release --locked -p flamberge
           cargo install cargo-deb cargo-generate-rpm --locked
-          deb=$(cargo deb --no-build -p flamberge-cli 2>/dev/null | tail -1)
+          deb=$(cargo deb --no-build -p flamberge 2>/dev/null | tail -1)
           cargo generate-rpm -p crates/flamberge-cli
           rpm=$(ls target/generate-rpm/*.rpm | head -1)
           cp "$deb" "$rpm" .
@@ -141,7 +141,7 @@ jobs:
             echo "::notice::CARGO_REGISTRY_TOKEN not set; skipping crates.io publish."
             exit 0
           fi
-          for crate in flamberge-crypto flamberge-formats flamberge-keys flamberge-schemes flamberge-cli; do
+          for crate in flamberge-crypto flamberge-formats flamberge-keys flamberge-schemes flamberge; do
             echo "== publishing $crate =="
             # cargo blocks until each crate is index-visible before returning,
             # so the next (dependent) crate resolves its just-published dep.
