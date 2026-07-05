@@ -13,7 +13,7 @@ members = [
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.85"
-license = "GPL-3.0-or-later"
+license = "MIT"
 repository = "https://github.com/kessriga/flamberge"
 authors = ["Kessriga Jeukal"]
 

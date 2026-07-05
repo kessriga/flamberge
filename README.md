@@ -21,10 +21,22 @@ The scheme-by-scheme algorithm reference this project is built from lives in
 
 Dependency direction: `crypto` ← `formats`, `keys` ← `schemes` ← `cli`.
 
-## Build & test
+## Install
+
+**Pre-built binaries.** Each tagged release attaches an optimized `flamberge`
+binary for Linux (`x86_64`), macOS (Apple Silicon + Intel), and Windows
+(`x86_64`). Download the archive for your platform from the
+[Releases](https://github.com/kessriga/flamberge/releases) page, unpack it, and
+put `flamberge` on your `PATH`.
+
+**From source** (needs Rust ≥ 1.85):
 
 ```sh
-cargo build
+# Install the CLI into ~/.cargo/bin
+cargo install --path crates/flamberge-cli
+
+# …or just build/test the workspace in place
+cargo build --release   # binary at target/release/flamberge
 cargo test
 ```
 
@@ -57,16 +69,42 @@ flamberge keys kobo                  # Kobo device / desktop DB + NIC MACs
 flamberge keys kindle --k4i my.k4i   # decode a Kindle .k4i / .kinf / Android artifact
 ```
 
-## Implementation status
+## Supported schemes
 
-All book-decryption schemes are implemented and unit-tested end-to-end:
-**Mobipocket**, **Topaz**, **KFX**, **Adobe ADEPT** (EPUB + PDF), **Barnes &
-Noble** (EPUB + PDF), **eReader** (`.pdb` → PMLZ), and **Kobo** (KEPUB). Key
-acquisition is real for the offline generators and for Kindle (`.k4i`/`.kinf`/
-Android), Adobe (macOS `activation.dat`), and Kobo (device/desktop DB + NIC
-MACs) extraction.
+Decryption itself is pure Rust and runs on every platform; the "key source"
+column is where the matching key comes from. All schemes are implemented and
+unit-tested end-to-end.
 
-What remains stubbed is on-host key *gathering* that isn't reproducible offline:
-Kindle local machine-value collection and Adobe Windows live-DPAPI (both need the
-target OS + user profile). A downloadable-binary release and a full
-scheme/platform support matrix are tracked separately.
+| Scheme | Input | Output | Key source |
+|---|---|---|---|
+| Mobipocket | `.azw` / `.mobi` / `.prc` | `.mobi` | Kindle serial / PID, or `--k4i` / `--android` |
+| Topaz | `.azw1` / `.tpz` | `.tpz` | Kindle serial / PID |
+| KFX | `.kfx-zip` | `.kfx-zip` | Kindle serial / PID |
+| Adobe ADEPT | `.epub` | `.epub` | Adobe private license key (`activation.dat`) |
+| Adobe ADEPT | `.pdf` | `.pdf` | Adobe private license key (`activation.dat`) |
+| Barnes & Noble | `.epub` | `.epub` | B&N key from name + credit-card (`keys ignoble`) |
+| Barnes & Noble | `.pdf` | `.pdf` | B&N key from name + credit-card (`keys ignoble`) |
+| eReader | `.pdb` | `.pmlz` | eReader key from name + credit-card (`keys ereader`) |
+| Kobo | `.kepub.epub` | `.epub` | Kobo user key (device / desktop DB + NIC MACs) |
+
+## Key extraction by platform
+
+Offline generators (`keys ignoble` / `ereader` / `eink-pid`) and offline artifact
+decoding are OS-independent. On-host extraction that reads another app's local
+state depends on the platform:
+
+| Source | Linux | macOS | Windows |
+|---|---|---|---|
+| Kindle `.k4i` / `.kinf` / Android artifact (offline decode) | ✅ | ✅ | ✅ |
+| Kindle on-host machine-value gathering | ⛔ | ⛔ | ⛔ |
+| Adobe ADEPT `activation.dat` | — | ✅ | ⛔ (live DPAPI) |
+| Kobo device / desktop DB + NIC MACs | ✅ | ✅ | ✅ |
+
+⛔ marks paths that are not reproducible offline — they need the target OS plus
+the user's profile (Windows DPAPI, host-specific machine values). The decryption
+algorithms for those paths are implemented and tested; only the live gathering
+is stubbed.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).
