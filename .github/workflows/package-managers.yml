@@ -66,7 +66,10 @@ jobs:
             echo "Formula already up to date."
           else
             git commit -m "flamberge ${TAG#v}"
-            git push
+            # `origin HEAD` (not a bare `git push`) so the first push against a
+            # freshly-created empty tap repo has an explicit target and doesn't
+            # fail on a missing upstream.
+            git push origin HEAD
           fi
 
   # Renders the nuspec + install script for the tag, packs, and pushes to
