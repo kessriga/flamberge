@@ -23,22 +23,47 @@ Dependency direction: `crypto` ← `formats`, `keys` ← `schemes` ← `cli`.
 
 ## Install
 
+Pick your platform's package manager:
+
+| Manager | Command | Platforms |
+| --- | --- | --- |
+| **cargo** (crates.io) | `cargo install flamberge-cli` | any (builds from source) |
+| **Homebrew** | `brew install kessriga/flamberge/flamberge` | macOS (Apple Silicon), Linux (`x86_64`) |
+| **mise** | `mise use -g ubi:kessriga/flamberge` | Linux, macOS, Windows |
+| **winget** | `winget install Kessriga.Flamberge` | Windows (`x86_64`) |
+| **Chocolatey** | `choco install flamberge` | Windows (`x86_64`) |
+| **Arch (AUR)** | `yay -S flamberge-bin` | Linux (`x86_64`) |
+| **Debian/Ubuntu** | `dpkg -i flamberge_<ver>_amd64.deb` (from Releases) | Linux (`x86_64`) |
+| **Fedora/RHEL** | `rpm -i flamberge-<ver>-1.x86_64.rpm` (from Releases) | Linux (`x86_64`) |
+
+> Some managers are in the process of being registered (see
+> [`packaging/README.md`](packaging/README.md)). Until they are live, use the
+> pre-built binaries or `cargo install --path` below.
+
 **Pre-built binaries.** Each tagged release attaches an optimized `flamberge`
-binary for Linux (`x86_64`), macOS (Apple Silicon), and Windows
-(`x86_64`). Download the archive for your platform from the
+binary for Linux (`x86_64`), macOS (Apple Silicon), and Windows (`x86_64`),
+along with `.deb`/`.rpm` packages and a `SHA256SUMS` file for verification.
+Download the archive for your platform from the
 [Releases](https://github.com/kessriga/flamberge/releases) page, unpack it, and
 put `flamberge` on your `PATH`.
 
 **From source** (needs Rust ≥ 1.85):
 
 ```sh
-# Install the CLI into ~/.cargo/bin
+# Install the published CLI from crates.io
+cargo install flamberge-cli
+
+# …or install from a local checkout
 cargo install --path crates/flamberge-cli
 
 # …or just build/test the workspace in place
 cargo build --release   # binary at target/release/flamberge
 cargo test
 ```
+
+Packaging definitions and the release-to-manager automation live under
+[`packaging/`](packaging/); every tagged release propagates the new version and
+checksums to the managers whose credentials are configured.
 
 ## Usage
 
