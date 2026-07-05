@@ -1,0 +1,22 @@
+[package]
+name = "flamberge-integration-tests"
+description = "Cross-scheme end-to-end integration suite + synthesized fixtures for Flamberge"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+flamberge-crypto.workspace = true
+flamberge-formats.workspace = true
+flamberge-keys.workspace = true
+flamberge-schemes.workspace = true
+base64.workspace = true
+flate2.workspace = true
+zip.workspace = true
+rsa.workspace = true
+rand.workspace = true
+rusqlite.workspace = true
+tempfile.workspace = true

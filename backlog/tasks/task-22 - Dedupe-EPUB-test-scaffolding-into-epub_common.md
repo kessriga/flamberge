@@ -1,10 +1,10 @@
 ---
 id: TASK-22
 title: Dedupe EPUB test scaffolding into epub_common
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-04 09:59'
-updated_date: '2026-07-04 22:42'
+updated_date: '2026-07-04 22:56'
 labels:
   - schemes
   - epub
@@ -26,10 +26,10 @@ Extract the shared builders into one place — e.g. a `#[cfg(test)]` helper modu
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The EPUB test-fixture builders (pkcs7_pad, raw_deflate, encrypt_member, rights_xml, encryption_xml, build_zip, read_zip) have a single shared definition rather than being duplicated across adept.rs and ignoble.rs
-- [ ] #2 Both the ADEPT and B&N scheme test modules use the shared helpers; no verbatim copy remains
-- [ ] #3 All existing flamberge-schemes tests still pass with the shared helpers; cargo build/test/clippy/fmt are clean
-- [ ] #4 No production (non-test) behaviour changes
+- [x] #1 The EPUB test-fixture builders (pkcs7_pad, raw_deflate, encrypt_member, rights_xml, encryption_xml, build_zip, read_zip) have a single shared definition rather than being duplicated across adept.rs and ignoble.rs
+- [x] #2 Both the ADEPT and B&N scheme test modules use the shared helpers; no verbatim copy remains
+- [x] #3 All existing flamberge-schemes tests still pass with the shared helpers; cargo build/test/clippy/fmt are clean
+- [x] #4 No production (non-test) behaviour changes
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -41,12 +41,26 @@ Extract the shared builders into one place — e.g. a `#[cfg(test)]` helper modu
 4. Verify `cargo build`, `cargo test -p flamberge-schemes`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all -- --check` are all clean. No production behaviour change.
 <!-- SECTION:PLAN:END -->
 
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Deduplicated the EPUB test-fixture scaffolding that was copy-pasted verbatim between `adept.rs` and `ignoble.rs`.
+
+**What moved:** the scheme-agnostic builders `pkcs7_pad`, `raw_deflate`, `encrypt_member`, `rights_xml`, `encryption_xml`, `build_zip`, `read_zip` (plus the `ADEPT_NS`/`ENC_NS` constants) now have a single definition in a new `#[cfg(test)] pub(crate) mod test_support` inside `crates/flamberge-schemes/src/epub_common.rs`. Both scheme test modules glob-import it (`use crate::epub_common::test_support::*;`).
+
+**What stayed:** each scheme keeps its own key-wrapping + book synthesis — ADEPT's `rsa_wrap`/`pkcs1_block`/`seeded_rng`/`synth_adept_epub`, B&N's `user_key_from_cchash`/`wrap_book_key`/`B64`/`synth_bn_epub` — and all actual test cases.
+
+`test_support` lives in `epub_common` (rather than a `tests/` support crate) so it can sit alongside the production `decrypt_member` the fixtures mirror, and because a crate-external test crate cannot reach crate-private items.
+
+Test-only; no production behaviour changed. Verified clean: `cargo build`, `cargo test -p flamberge-schemes`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all -- --check`. Merged via PR #22.
+<!-- SECTION:FINAL_SUMMARY:END -->
+
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 cargo build succeeds with no warnings
-- [ ] #2 cargo test passes (unit and integration)
-- [ ] #3 cargo clippy passes with no warnings
-- [ ] #4 no panic!/unwrap/expect on non-test code paths
-- [ ] #5 behavior matches docs/DEDRM_SCHEMES.md and code cites the relevant section
-- [ ] #6 public items have doc comments
+- [x] #1 cargo build succeeds with no warnings
+- [x] #2 cargo test passes (unit and integration)
+- [x] #3 cargo clippy passes with no warnings
+- [x] #4 no panic!/unwrap/expect on non-test code paths
+- [x] #5 behavior matches docs/DEDRM_SCHEMES.md and code cites the relevant section
+- [x] #6 public items have doc comments
 <!-- DOD:END -->
