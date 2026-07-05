@@ -3,11 +3,13 @@
 //! The DB may be in WAL mode, which SQLite refuses to open without its sidecar
 //! `-wal` file. Following `obok.py` (`KoboLibrary.__init__`), we patch the
 //! header of a copy (bytes 18–19 → `01 01`, forcing rollback-journal mode) and
-//! open that copy from a temp file read-only. The per-file wrapped page keys and
-//! the book title are read from `content_keys` joined with `content`.
+//! open that copy from a temp file read-only — done by the shared
+//! [`flamberge_keys::kobo::open_kobo_db`] helper. The per-file wrapped page keys
+//! and the book title are read from `content_keys` joined with `content`.
 
 use base64::Engine;
-use rusqlite::{Connection, OpenFlags};
+use flamberge_keys::kobo::open_kobo_db;
+use rusqlite::Connection;
 
 use crate::{Result, SchemeError};
 
@@ -29,7 +31,7 @@ pub(super) struct VolumeKeys {
 pub(super) fn read_volume(db_bytes: &[u8], volumeid: Option<&str>) -> Result<VolumeKeys> {
     // The temp file must outlive the connection: it is bound (not dropped) until
     // the end of this function, after all queries have run.
-    let (_tmp, conn) = open_patched(db_bytes)?;
+    let (_tmp, conn) = open_kobo_db(db_bytes.to_vec()).map_err(|e| invalid(e.to_string()))?;
 
     let vid = match volumeid {
         Some(v) => v.to_string(),
@@ -43,30 +45,6 @@ pub(super) fn read_volume(db_bytes: &[u8], volumeid: Option<&str>) -> Result<Vol
     }
     let title = read_title(&conn, &vid);
     Ok(VolumeKeys { keys, title })
-}
-
-/// Write the WAL-patched DB bytes to a temp file and open it read-only. Returns
-/// the temp-file guard alongside the connection so the caller keeps the backing
-/// file alive.
-fn open_patched(db_bytes: &[u8]) -> Result<(tempfile::NamedTempFile, Connection)> {
-    use std::io::Write;
-
-    let mut patched = db_bytes.to_vec();
-    // Force rollback-journal mode so SQLite opens the copy without a -wal file.
-    if patched.len() >= 20 {
-        patched[18] = 0x01;
-        patched[19] = 0x01;
-    }
-
-    let mut file = tempfile::NamedTempFile::new()
-        .map_err(|e| invalid(format!("temp file for Kobo DB: {e}")))?;
-    file.write_all(&patched)
-        .and_then(|()| file.as_file().sync_all())
-        .map_err(|e| invalid(format!("writing Kobo DB copy: {e}")))?;
-
-    let conn = Connection::open_with_flags(file.path(), OpenFlags::SQLITE_OPEN_READ_ONLY)
-        .map_err(sqlite_err)?;
-    Ok((file, conn))
 }
 
 /// The single distinct `volumeid` in the library, or a clear error when the DB

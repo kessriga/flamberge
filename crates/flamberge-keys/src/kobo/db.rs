@@ -1,20 +1,69 @@
 //! Reading `UserID`s from the Kobo library SQLite database (§9.1–9.2).
 //!
 //! The DB may be in WAL mode, which SQLite refuses to open without its sidecar
-//! `-wal` file. Following `obok.py` (`KoboLibrary.__init__`), we patch the
-//! header of a copy (bytes 18–19 → `01 01`, forcing rollback-journal mode) and
-//! open that copy read-only from a temp file. Mirrors the identical trick in
-//! `flamberge-schemes::kobo::db`; the two copies could be unified by hoisting
-//! the helper here (the dependency runs `keys ← schemes`, so `schemes` could
-//! call it) — left as a follow-up to avoid a cross-crate change on this task.
+//! `-wal` file. [`open_kobo_db`] patches the header of a copy (bytes 18–19 →
+//! `01 01`, forcing rollback-journal mode) and opens that copy read-only from a
+//! temp file; it is shared with the Kobo scheme in `flamberge-schemes`, which
+//! calls it for the same reason (the per-file wrapped page keys live in the DB).
 //!
 //! Reference: `docs/DEDRM_SCHEMES.md` §9.1–9.2; obok `__getuserids`.
 
 use std::io::Write;
 
 use rusqlite::{Connection, OpenFlags};
+use tempfile::NamedTempFile;
 
 use crate::{KeyError, Result};
+
+/// Failure opening a Kobo SQLite DB from raw bytes via [`open_kobo_db`].
+///
+/// A neutral error so each caller maps it onto its own error type without
+/// coupling the `flamberge-keys` and `flamberge-schemes` error enums together.
+#[derive(Debug, thiserror::Error)]
+pub enum KoboDbError {
+    /// Creating the backing temp file failed.
+    #[error("temp file for Kobo DB: {0}")]
+    TempFile(#[source] std::io::Error),
+    /// Writing the patched DB bytes to the temp file failed.
+    #[error("writing Kobo DB copy: {0}")]
+    Write(#[source] std::io::Error),
+    /// SQLite could not open the patched copy.
+    #[error("Kobo DB: {0}")]
+    Open(#[source] rusqlite::Error),
+}
+
+/// Open a Kobo library SQLite database supplied as raw `db_bytes`, read-only.
+///
+/// The DB may be in WAL mode, which SQLite refuses to open without its sidecar
+/// `-wal` file. Following obok (`KoboLibrary.__init__`), the header is patched
+/// (bytes 18–19 → `01 01`, forcing rollback-journal mode) and a temp-file copy
+/// is opened read-only. Consumes `db_bytes`, patching it in place so the
+/// (potentially large) buffer is not copied again.
+///
+/// Returns the temp-file guard alongside the connection: the file must outlive
+/// the connection, so keep the guard bound until every query has run. Shared
+/// with the Kobo scheme in `flamberge-schemes`; each caller maps [`KoboDbError`]
+/// onto its own error type.
+///
+/// Reference: `docs/DEDRM_SCHEMES.md` §9.1 (WAL header patch).
+pub fn open_kobo_db(
+    mut db_bytes: Vec<u8>,
+) -> std::result::Result<(NamedTempFile, Connection), KoboDbError> {
+    // Force rollback-journal mode so SQLite opens the copy without a -wal file.
+    if db_bytes.len() >= 20 {
+        db_bytes[18] = 0x01;
+        db_bytes[19] = 0x01;
+    }
+
+    let mut file = NamedTempFile::new().map_err(KoboDbError::TempFile)?;
+    file.write_all(&db_bytes)
+        .and_then(|()| file.as_file().sync_all())
+        .map_err(KoboDbError::Write)?;
+
+    let conn = Connection::open_with_flags(file.path(), OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(KoboDbError::Open)?;
+    Ok((file, conn))
+}
 
 /// Read every `UserID` from the `user` table of the Kobo DB `db_bytes`.
 ///
@@ -25,7 +74,7 @@ use crate::{KeyError, Result};
 /// derivation in [`super::derive_userkeys`].
 pub(super) fn read_userids(db_bytes: Vec<u8>) -> Result<Vec<String>> {
     // The temp file must outlive the connection; both are dropped at end of fn.
-    let (_tmp, conn) = open_patched(db_bytes)?;
+    let (_tmp, conn) = open_kobo_db(db_bytes).map_err(|e| KeyError::Invalid(e.to_string()))?;
     let mut stmt = conn
         .prepare("SELECT UserID FROM user")
         .map_err(sqlite_err)?;
@@ -35,26 +84,6 @@ pub(super) fn read_userids(db_bytes: Vec<u8>) -> Result<Vec<String>> {
         .filter_map(|r| r.ok())
         .collect();
     Ok(userids)
-}
-
-/// Write the WAL-patched DB bytes to a temp file and open it read-only. Consumes
-/// `db_bytes`, patching the header in place to avoid an extra full-size copy.
-fn open_patched(mut db_bytes: Vec<u8>) -> Result<(tempfile::NamedTempFile, Connection)> {
-    // Force rollback-journal mode so SQLite opens the copy without a -wal file.
-    if db_bytes.len() >= 20 {
-        db_bytes[18] = 0x01;
-        db_bytes[19] = 0x01;
-    }
-
-    let mut file = tempfile::NamedTempFile::new()
-        .map_err(|e| KeyError::Invalid(format!("temp file for Kobo DB: {e}")))?;
-    file.write_all(&db_bytes)
-        .and_then(|()| file.as_file().sync_all())
-        .map_err(|e| KeyError::Invalid(format!("writing Kobo DB copy: {e}")))?;
-
-    let conn = Connection::open_with_flags(file.path(), OpenFlags::SQLITE_OPEN_READ_ONLY)
-        .map_err(sqlite_err)?;
-    Ok((file, conn))
 }
 
 fn sqlite_err(e: rusqlite::Error) -> KeyError {

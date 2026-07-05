@@ -12,6 +12,8 @@
 mod db;
 mod host;
 
+pub use db::{open_kobo_db, KoboDbError};
+
 use crate::{KeyError, Result};
 use flamberge_crypto::digest;
 
