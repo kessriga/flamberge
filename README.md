@@ -38,9 +38,10 @@ Pick your platform's package manager:
 | **Debian/Ubuntu** | `dpkg -i flamberge_<ver>_amd64.deb` (from Releases) | Linux (`x86_64`) |
 | **Fedora/RHEL** | `rpm -i flamberge-<ver>-1.x86_64.rpm` (from Releases) | Linux (`x86_64`) |
 
-> Some managers are in the process of being registered (see
-> [`packaging/README.md`](packaging/README.md)). Until they are live, use the
-> pre-built binaries or `cargo install --path` below.
+> **Live now:** Nix, Scoop, mise, and the pre-built binaries (incl. `.deb`/`.rpm`).
+> The crates.io, Homebrew, winget, Chocolatey, and AUR entries are still being
+> registered (see [`packaging/README.md`](packaging/README.md)) — until each is
+> live, use one of the above or `cargo install --path` below.
 
 **Pre-built binaries.** Each tagged release attaches an optimized `flamberge`
 binary for Linux (`x86_64`), macOS (Apple Silicon), and Windows (`x86_64`),
