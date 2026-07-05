@@ -5,11 +5,48 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 authors.workspace = true
+readme = "README.md"
+keywords = ["drm", "ebook", "kindle", "epub", "dedrm"]
+categories = ["command-line-utilities", "cryptography"]
 
 [[bin]]
 name = "flamberge"
 path = "src/main.rs"
+
+# Debian package metadata for `cargo deb`. Asset source paths are resolved
+# relative to THIS crate directory, so the workspace-root docs are reached with
+# `../../`. The release binary lives in the workspace target dir, which cargo-deb
+# locates automatically.
+[package.metadata.deb]
+name = "flamberge"
+maintainer = "Kessriga Jeukal <kessriga.jeukal@proton.me>"
+copyright = "2026, Kessriga Jeukal <kessriga.jeukal@proton.me>"
+license-file = ["../../LICENSE", "0"]
+section = "utils"
+priority = "optional"
+extended-description = """\
+flamberge removes DRM from ebooks, reimplementing the DeDRM_tools Calibre \
+plugins in Rust. It supports the Mobipocket, Topaz, KFX, Adobe ADEPT \
+(EPUB+PDF), Barnes & Noble (EPUB+PDF), eReader, and Kobo KEPUB schemes."""
+assets = [
+    ["target/release/flamberge", "usr/bin/", "755"],
+    ["../../README.md", "usr/share/doc/flamberge/README.md", "644"],
+]
+
+# RPM package metadata for `cargo generate-rpm`. This tool resolves source paths
+# relative to the invocation CWD (the workspace root in CI), so the workspace-root
+# docs are named without a prefix.
+[package.metadata.generate-rpm]
+name = "flamberge"
+summary = "Command-line DRM removal for ebooks"
+assets = [
+    { source = "target/release/flamberge", dest = "/usr/bin/flamberge", mode = "755" },
+    { source = "README.md", dest = "/usr/share/doc/flamberge/README.md", mode = "644", doc = true },
+    { source = "LICENSE", dest = "/usr/share/doc/flamberge/LICENSE", mode = "644", doc = true },
+]
 
 [dependencies]
 flamberge-crypto.workspace = true

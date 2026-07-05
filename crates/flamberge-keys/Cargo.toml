@@ -5,7 +5,11 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 authors.workspace = true
+keywords = ["drm", "ebook", "kindle", "adobe", "key"]
+categories = ["cryptography"]
 
 [dependencies]
 flamberge-crypto.workspace = true
