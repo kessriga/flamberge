@@ -1,25 +1,54 @@
 # flamberge
 
-A standalone Rust CLI for removing DRM from ebooks — a reimplementation of the
-[DeDRM_tools](https://github.com/apprenticeharper/DeDRM_tools) Calibre plugins.
+**Remove DRM from ebooks you own — a fast, standalone Rust CLI.**
 
-> Use only on books you own, where removing DRM for personal use is lawful in
+[![CI](https://github.com/kessriga/flamberge/actions/workflows/ci.yml/badge.svg)](https://github.com/kessriga/flamberge/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)
+
+flamberge turns a locked book you bought — from Kindle, Kobo, Adobe/library
+loans, Barnes & Noble, or eReader — into a plain, standard file (`.epub`,
+`.mobi`, `.pdf`, …) that opens in any reader and is yours to keep and back up.
+It's a from-scratch reimplementation of the
+[DeDRM_tools](https://github.com/apprenticeharper/DeDRM_tools) Calibre plugins as
+a single self-contained binary — no Calibre, no Python, no plugins.
+
+> **Use only on books you own,** where removing DRM for personal use is lawful in
 > your jurisdiction.
 
-The scheme-by-scheme algorithm reference this project is built from lives in
-[`docs/DEDRM_SCHEMES.md`](docs/DEDRM_SCHEMES.md).
+**New to any of this?** The [**User Guide**](docs/GUIDE.md) explains — from zero —
+what DRM is, where your key comes from, and how to unlock your books store by
+store. Start there if the terms "DRM" or "key" are unfamiliar.
 
-## Workspace layout
+## Why flamberge
 
-| Crate | Role | Status |
-|---|---|---|
-| `flamberge-crypto` | Shared ciphers: PC1, Topaz, AES, DES, RC4, CRC-32, digests, PBKDF2, RSA | Implemented + tested |
-| `flamberge-formats` | Container parsers: PalmDB, TPZ0, KFX-ZIP, ION, OCF/EPUB, PDF, PMLZ | Implemented + tested |
-| `flamberge-keys` | Key acquisition: PID gen, B&N/eReader/Kobo offline keygen, platform extraction | Generators + Kindle/Adobe(macOS)/Kobo extraction done; on-host Kindle machine-value gathering & Adobe Windows DPAPI stubbed |
-| `flamberge-schemes` | Per-scheme DRM removal, format dispatch | All schemes implemented + tested |
-| `flamberge` | The `flamberge` binary (batch mode, `--auto-keys`, `keys` subcommands); crate dir `crates/flamberge-cli` | Implemented + tested |
+- **One binary, no runtime.** A single static executable — no Calibre install,
+  no Python, no plugin wrangling.
+- **Every major store.** Kindle (Mobipocket/Topaz/KFX), Kobo, Adobe ADEPT
+  (EPUB + PDF), Barnes & Noble (EPUB + PDF), and eReader.
+- **Finds your keys for you.** `--auto-keys` pulls local Adobe/Kobo/Kindle keys
+  off this machine; dedicated `keys` subcommands generate or extract them.
+- **Batch-friendly.** Point it at a whole folder and get a per-file summary.
+- **Private and safe.** Runs entirely offline, never touches your original file
+  (output is always a new file), and is fully open-source and auditable.
+- **Cross-platform.** Decryption is pure Rust on Linux, macOS, and Windows.
 
-Dependency direction: `crypto` ← `formats`, `keys` ← `schemes` ← `cli`.
+## Quickstart
+
+```sh
+# 1. Install (see Install below for every option)
+cargo install flamberge
+
+# 2. Unlock a book, supplying your key
+flamberge decrypt book.azw  --serial B001234567890123   # Kindle device serial
+flamberge decrypt book.epub --auto-keys                  # Adobe / library (finds your key)
+
+# 3. Done — the unlocked book is written next to the original as book_nodrm.<ext>
+```
+
+Not sure where *your* key comes from? That's exactly what the
+[User Guide](docs/GUIDE.md#part-3--walkthroughs-by-store) walks through, one
+store at a time.
 
 ## Install
 
@@ -41,97 +70,106 @@ Pick your platform's package manager:
 > **Live now:** Nix, Scoop, mise, and the pre-built binaries (incl. `.deb`/`.rpm`).
 > The crates.io, Homebrew, winget, Chocolatey, and AUR entries are still being
 > registered (see [`packaging/README.md`](packaging/README.md)) — until each is
-> live, use one of the above or `cargo install --path` below.
+> live, use one of the above or build from source below.
 
-**Pre-built binaries.** Each tagged release attaches an optimized `flamberge`
-binary for Linux (`x86_64`), macOS (Apple Silicon), and Windows (`x86_64`),
-along with `.deb`/`.rpm` packages and a `SHA256SUMS` file for verification.
-Download the archive for your platform from the
+**Pre-built binaries.** Every tagged release attaches an optimized `flamberge`
+binary for Linux (`x86_64`), macOS (Apple Silicon), and Windows (`x86_64`), plus
+`.deb`/`.rpm` packages and a `SHA256SUMS` file for verification. Grab the archive
+for your platform from the
 [Releases](https://github.com/kessriga/flamberge/releases) page, unpack it, and
 put `flamberge` on your `PATH`.
 
 **From source** (needs Rust ≥ 1.85):
 
 ```sh
-# Install the published CLI from crates.io
-cargo install flamberge
-
-# …or install from a local checkout
-cargo install --path crates/flamberge-cli
-
-# …or just build/test the workspace in place
-cargo build --release   # binary at target/release/flamberge
-cargo test
+cargo install flamberge                     # from crates.io
+cargo install --path crates/flamberge-cli   # from a local checkout
+cargo build --release                        # or just build in place → target/release/flamberge
 ```
-
-Packaging definitions and the release-to-manager automation live under
-[`packaging/`](packaging/); every tagged release propagates the new version and
-checksums to the managers whose credentials are configured.
 
 ## Usage
 
-The scheme is chosen by file extension, then every candidate key is tried. Output
-defaults to `<stem>_nodrm.<ext>` next to the input.
+The scheme is chosen automatically by file extension, then every candidate key is
+tried. Output defaults to `<name>_nodrm.<ext>` next to the input; your original is
+never modified.
 
 ```sh
 # Decrypt a single book with an explicit key
-flamberge decrypt book.azw  --serial B001234567890123
-flamberge decrypt book.epub --adept-key adobekey.der
+flamberge decrypt book.azw        --serial B001234567890123
+flamberge decrypt book.epub       --adept-key adobekey.der
 flamberge decrypt book.kepub.epub --kobo-db KoboReader.sqlite
-
-# Batch: pass several files or a whole directory; a per-file OK/SKIP/FAIL summary
-# is printed and the exit code is non-zero if any file failed.
-flamberge decrypt ~/Books --output-dir ~/Books/nodrm
 
 # Best-effort: discover local Adobe/Kobo/Kindle keys on this host first
 flamberge decrypt book.epub --auto-keys
 
-# Offline key generators
-flamberge keys ignoble --name "John Smith" --cc "1234 5678 9012 3456"
-flamberge keys ereader --name "Jane Doe" --cc "4111 1111 1111 1111"
+# Batch: several files or a whole directory → per-file OK/SKIP/FAIL summary
+flamberge decrypt ~/Books --output-dir ~/Books/nodrm --auto-keys
+
+# Generate keys offline (from your name + card, or a Kindle serial)
+flamberge keys ignoble --name "Jane Q. Reader" --cc "1234 5678 9012 3456"
+flamberge keys ereader --name "Jane Q. Reader" --cc "4111 1111 1111 1111"
 flamberge keys eink-pid --serial B001234567890123
 
 # Extract keys from local DRM-app state
-flamberge keys adobe                 # macOS Adobe Digital Editions activation.dat
-flamberge keys kobo                  # Kobo device / desktop DB + NIC MACs
-flamberge keys kindle --k4i my.k4i   # decode a Kindle .k4i / .kinf / Android artifact
+flamberge keys adobe                  # macOS Adobe Digital Editions activation.dat
+flamberge keys kobo                   # Kobo device / desktop DB + network-card IDs
+flamberge keys kindle --k4i my.k4i    # decode a Kindle .k4i / .kinf / Android artifact
 ```
 
-## Supported schemes
+Run `flamberge --help` or `flamberge <command> --help` for the full option list.
+For a guided, store-by-store walkthrough, see the [User Guide](docs/GUIDE.md).
 
-Decryption itself is pure Rust and runs on every platform; the "key source"
-column is where the matching key comes from. All schemes are implemented and
-unit-tested end-to-end.
+## Supported stores & formats
 
-| Scheme | Input | Output | Key source |
-|---|---|---|---|
-| Mobipocket | `.azw` / `.mobi` / `.prc` | `.mobi` | Kindle serial / PID, or `--k4i` / `--android` |
-| Topaz | `.azw1` / `.tpz` | `.tpz` | Kindle serial / PID |
-| KFX | `.kfx-zip` | `.kfx-zip` | Kindle serial / PID |
-| Adobe ADEPT | `.epub` | `.epub` | Adobe private license key (`activation.dat`) |
-| Adobe ADEPT | `.pdf` | `.pdf` | Adobe private license key (`activation.dat`) |
-| Barnes & Noble | `.epub` | `.epub` | B&N key from name + credit-card (`keys ignoble`) |
-| Barnes & Noble | `.pdf` | `.pdf` | B&N key from name + credit-card (`keys ignoble`) |
-| eReader | `.pdb` | `.pmlz` | eReader key from name + credit-card (`keys ereader`) |
-| Kobo | `.kepub.epub` | `.epub` | Kobo user key (device / desktop DB + NIC MACs) |
+Decryption is pure Rust and runs on every platform; all schemes are implemented
+and tested end-to-end. "Where the key comes from" is covered per store in the
+[User Guide](docs/GUIDE.md#part-3--walkthroughs-by-store).
 
-## Key extraction by platform
+| Store | Format in → out | Where your key comes from |
+|---|---|---|
+| **Kindle** | `.azw` `.mobi` `.prc` → `.mobi`; `.azw1` `.tpz` → `.tpz`; `.kfx-zip` → `.kfx-zip` | Kindle serial / PID, or `--k4i` / `--android` |
+| **Adobe & library** | `.epub` → `.epub`; `.pdf` → `.pdf` | Adobe key from `activation.dat` (`keys adobe`) |
+| **Barnes & Noble** | `.epub` → `.epub`; `.pdf` → `.pdf` | Name + credit-card (`keys ignoble`) |
+| **eReader** | `.pdb` → `.pmlz` | Name + credit-card (`keys ereader`) |
+| **Kobo** | `.kepub.epub` → `.epub` | Kobo user key + library DB (`keys kobo` / `--kobo-db`) |
 
-Offline generators (`keys ignoble` / `ereader` / `eink-pid`) and offline artifact
-decoding are OS-independent. On-host extraction that reads another app's local
-state depends on the platform:
+**Key extraction by platform.** Decryption works everywhere; only the *automatic*
+gathering of another app's local key state is platform-dependent — notably, the
+Adobe key auto-extracts on macOS but must be exported to a `.der` on Windows. The
+full matrix is in the
+[User Guide](docs/GUIDE.md#platform-support-at-a-glance).
 
-| Source | Linux | macOS | Windows |
-|---|---|---|---|
-| Kindle `.k4i` / `.kinf` / Android artifact (offline decode) | ✅ | ✅ | ✅ |
-| Kindle on-host machine-value gathering | ⛔ | ⛔ | ⛔ |
-| Adobe ADEPT `activation.dat` | — | ✅ | ⛔ (live DPAPI) |
-| Kobo device / desktop DB + NIC MACs | ✅ | ✅ | ✅ |
+## How it works
 
-⛔ marks paths that are not reproducible offline — they need the target OS plus
-the user's profile (Windows DPAPI, host-specific machine values). The decryption
-algorithms for those paths are implemented and tested; only the live gathering
-is stubbed.
+flamberge is a Cargo workspace; the CLI is a thin driver over layered libraries.
+
+| Crate | Role |
+|---|---|
+| `flamberge-crypto` | Shared ciphers: PC1, Topaz, AES, DES, RC4, CRC-32, digests, PBKDF2, RSA |
+| `flamberge-formats` | Container parsers: PalmDB, TPZ0, KFX-ZIP, ION, OCF/EPUB, PDF, PMLZ |
+| `flamberge-keys` | Key acquisition: PID gen, B&N/eReader/Kobo keygen, platform extraction |
+| `flamberge-schemes` | Per-scheme DRM removal + format dispatch |
+| `flamberge` | The `flamberge` binary (in `crates/flamberge-cli`) |
+
+Dependency direction: `crypto` ← `formats`, `keys` ← `schemes` ← `cli`. The
+byte-level algorithm reference for every scheme lives in
+[`docs/DEDRM_SCHEMES.md`](docs/DEDRM_SCHEMES.md).
+
+Build and test the workspace:
+
+```sh
+cargo build            # or cargo build --release
+cargo test             # unit + cross-scheme integration tests
+```
+
+## Documentation
+
+- [**User Guide**](docs/GUIDE.md) — start here if you're new: what DRM is, and how
+  to unlock your books store by store.
+- [**Scheme reference**](docs/DEDRM_SCHEMES.md) — byte-level spec for every DRM
+  scheme (offsets, constants, key derivation).
+- [**Packaging runbook**](packaging/README.md) — how releases propagate to package
+  managers.
 
 ## License
 
