@@ -19,8 +19,11 @@ propagating every tagged release automatically.
 - aggregates every asset's SHA-256 into a **`SHA256SUMS`** asset,
 - runs the `crates.io` publish job (a no-op until `CARGO_REGISTRY_TOKEN` is set).
 
-`.github/workflows/package-managers.yml`, on `release: published`, runs the
-winget / Homebrew / Chocolatey jobs — each a no-op until its secret is set.
+`.github/workflows/package-managers.yml`, triggered when the Release workflow
+finishes (via `workflow_run` — a `GITHUB_TOKEN`-created release does *not* fire
+`release: published`), runs the winget / Homebrew / Chocolatey jobs — each a
+no-op until its secret is set. Re-run a specific tag by hand with
+`gh workflow run "Package managers" -f tag=vX.Y.Z`.
 
 ## Per-manager setup
 
