@@ -1,13 +1,19 @@
 name: Package managers
 
-# Propagate a published release to the external package managers. Each job is a
+# Propagate a released version to the external package managers. Each job is a
 # no-op until the maintainer adds the corresponding secret, so this workflow is
-# safe to merge before any account exists. Triggered automatically when a release
-# is published (i.e. after release.yml has attached all assets), or manually for
-# a specific tag. See packaging/README.md for the one-time setup per manager.
+# safe to merge before any account exists. See packaging/README.md for the
+# one-time setup per manager.
+#
+# Triggered by the Release workflow *completing* (via `workflow_run`), not by the
+# `release: published` event: releases are created with the built-in GITHUB_TOKEN,
+# and GitHub does not cascade GITHUB_TOKEN-created events into new workflow runs,
+# so `release: published` would never fire. `workflow_run` fires regardless. The
+# manual `workflow_dispatch` path (re)propagates a specific tag on demand.
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       tag:
@@ -18,7 +24,9 @@ permissions:
   contents: read
 
 env:
-  TAG: ${{ github.event.release.tag_name || inputs.tag }}
+  # On workflow_run, head_branch is the tag name (e.g. "v0.1.1") for a tag-driven
+  # Release run; on manual dispatch it is empty, so fall back to the input.
+  TAG: ${{ github.event.workflow_run.head_branch || inputs.tag }}
 
 jobs:
   # Opens/updates a microsoft/winget-pkgs PR. After the initial manual submission
@@ -26,6 +34,12 @@ jobs:
   # forward and only bumps the version + installer URL/hash.
   winget:
     runs-on: ubuntu-latest
+    # Only propagate a successful, tag-driven Release run (or a manual dispatch);
+    # skip Release runs from workflow_dispatch/non-v refs.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       startsWith(github.event.workflow_run.head_branch, 'v'))
     steps:
       - name: Gate on WINGET_TOKEN
         id: gate
@@ -44,6 +58,10 @@ jobs:
   # kessriga/homebrew-flamberge tap repo.
   homebrew:
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       startsWith(github.event.workflow_run.head_branch, 'v'))
     steps:
       - uses: actions/checkout@v7
       - name: Gate on HOMEBREW_TAP_TOKEN
@@ -76,6 +94,10 @@ jobs:
   # chocolatey.org. Runs on Windows because `choco` is Windows-only.
   chocolatey:
     runs-on: windows-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       startsWith(github.event.workflow_run.head_branch, 'v'))
     steps:
       - uses: actions/checkout@v7
       - name: Gate on CHOCO_API_KEY
