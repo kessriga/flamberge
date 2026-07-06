@@ -3,6 +3,7 @@
 **Remove DRM from ebooks you own — a fast, standalone Rust CLI.**
 
 [![CI](https://github.com/kessriga/flamberge/actions/workflows/ci.yml/badge.svg)](https://github.com/kessriga/flamberge/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/flamberge.svg)](https://crates.io/crates/flamberge)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)
 
@@ -67,10 +68,10 @@ Pick your platform's package manager:
 | **Debian/Ubuntu** | `dpkg -i flamberge_<ver>_amd64.deb` (from Releases) | Linux (`x86_64`) |
 | **Fedora/RHEL** | `rpm -i flamberge-<ver>-1.x86_64.rpm` (from Releases) | Linux (`x86_64`) |
 
-> **Live now:** Nix, Scoop, mise, and the pre-built binaries (incl. `.deb`/`.rpm`).
-> The crates.io, Homebrew, winget, Chocolatey, and AUR entries are still being
-> registered (see [`packaging/README.md`](packaging/README.md)) — until each is
-> live, use one of the above or build from source below.
+> **Live now:** crates.io, Nix, Scoop, mise, and the pre-built binaries (incl.
+> `.deb`/`.rpm`). The Homebrew, winget, Chocolatey, and AUR entries are still
+> being registered (see [`packaging/README.md`](packaging/README.md)) — until
+> each is live, use one of the above or build from source below.
 
 **Pre-built binaries.** Every tagged release attaches an optimized `flamberge`
 binary for Linux (`x86_64`), macOS (Apple Silicon), and Windows (`x86_64`), plus
@@ -143,16 +144,18 @@ full matrix is in the
 
 flamberge is a Cargo workspace; the CLI is a thin driver over layered libraries.
 
-| Crate | Role |
-|---|---|
-| `flamberge-crypto` | Shared ciphers: PC1, Topaz, AES, DES, RC4, CRC-32, digests, PBKDF2, RSA |
-| `flamberge-formats` | Container parsers: PalmDB, TPZ0, KFX-ZIP, ION, OCF/EPUB, PDF, PMLZ |
-| `flamberge-keys` | Key acquisition: PID gen, B&N/eReader/Kobo keygen, platform extraction |
-| `flamberge-schemes` | Per-scheme DRM removal + format dispatch |
-| `flamberge` | The `flamberge` binary (in `crates/flamberge-cli`) |
+| Crate | Role | API docs |
+|---|---|---|
+| `flamberge-crypto` | Shared ciphers: PC1, Topaz, AES, DES, RC4, CRC-32, digests, PBKDF2, RSA | [docs.rs](https://docs.rs/flamberge-crypto) |
+| `flamberge-formats` | Container parsers: PalmDB, TPZ0, KFX-ZIP, ION, OCF/EPUB, PDF, PMLZ | [docs.rs](https://docs.rs/flamberge-formats) |
+| `flamberge-keys` | Key acquisition: PID gen, B&N/eReader/Kobo keygen, platform extraction | [docs.rs](https://docs.rs/flamberge-keys) |
+| `flamberge-schemes` | Per-scheme DRM removal + format dispatch | [docs.rs](https://docs.rs/flamberge-schemes) |
+| `flamberge` | The `flamberge` binary (in `crates/flamberge-cli`) | — (binary crate) |
 
 Dependency direction: `crypto` ← `formats`, `keys` ← `schemes` ← `cli`. The
-byte-level algorithm reference for every scheme lives in
+`flamberge` crate itself is the CLI binary, so it has no docs.rs page; the
+library crates above are documented on docs.rs. The byte-level algorithm
+reference for every scheme lives in
 [`docs/DEDRM_SCHEMES.md`](docs/DEDRM_SCHEMES.md).
 
 Build and test the workspace:
