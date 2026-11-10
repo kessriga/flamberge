@@ -105,7 +105,10 @@ impl<'a> PdfSerializer<'a> {
 
     fn write_object(&self, out: &mut Vec<u8>, obj: &Object) -> Result<()> {
         match obj {
-            Object::Null => out.extend_from_slice(b"null"),
+            Object::Null => {
+                sep_alnum(out);
+                out.extend_from_slice(b"null");
+            }
             Object::Bool(b) => {
                 sep_alnum(out);
                 out.extend_from_slice(if *b { b"true" } else { b"false" });
