@@ -518,10 +518,13 @@ impl PdfDocument {
 /// Recursively decipher an object's string/stream bytes with `f`.
 ///
 /// Strings are deciphered directly; arrays and dictionaries are walked; a
-/// stream's *body* is deciphered but its dictionary is left as-is — matching
-/// `ineptpdf.decipher_all`, which returns a `PDFStream` unchanged and deciphers
-/// only its raw data lazily. `objid`/`genno` are the enclosing object's, as the
-/// PDF security handler keys every nested string to its top-level object.
+/// stream has both its *body* and the strings in its dictionary deciphered.
+/// (`ineptpdf.decipher_all` returns a `PDFStream` unchanged, which leaves
+/// stream-dictionary strings such as a Form XObject's `/LastModified` or a
+/// metadata stream's `/Lang` enciphered in the output; the security handler
+/// encrypts them like any other string, so they are deciphered here.)
+/// `objid`/`genno` are the enclosing object's, as the PDF security handler
+/// keys every nested string to its top-level object.
 fn decipher_all(f: &DecipherFn, objid: u32, genno: u16, obj: Object) -> Object {
     match obj {
         Object::Str(bytes) => Object::Str(f(objid, genno, &bytes)),
@@ -538,6 +541,10 @@ fn decipher_all(f: &DecipherFn, objid: u32, genno: u16, obj: Object) -> Object {
         ),
         Object::Stream(mut s) => {
             s.rawdata = f(objid, genno, &s.rawdata);
+            s.dict = std::mem::take(&mut s.dict)
+                .into_iter()
+                .map(|(k, v)| (k, decipher_all(f, objid, genno, v)))
+                .collect();
             Object::Stream(s)
         }
         other => other,
@@ -644,6 +651,52 @@ mod tests {
             .as_array()
             .unwrap();
         assert_eq!(&dest[3..], &[Object::Int(720), Object::Null]);
+    }
+
+    #[test]
+    fn decipher_reaches_stream_dictionary_strings() {
+        // XOR stands in for the cipher: applying it twice is the identity.
+        let xor = |data: &[u8]| data.iter().map(|b| b ^ 0x5a).collect::<Vec<u8>>();
+        let lang = xor(b"en-US");
+        let nested = xor(b"nested");
+        let body = xor(b"BT ET");
+        let mut obj = Vec::new();
+        obj.extend_from_slice(b"<< /Length 5 /Lang <");
+        obj.extend_from_slice(
+            lang.iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>()
+                .as_bytes(),
+        );
+        obj.extend_from_slice(b"> /Info << /Names [<");
+        obj.extend_from_slice(
+            nested
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>()
+                .as_bytes(),
+        );
+        obj.extend_from_slice(b">] >> >>\nstream\n");
+        obj.extend_from_slice(&body);
+        obj.extend_from_slice(b"\nendstream");
+        let pdf = build_pdf_with(&[(2, &obj)]);
+
+        let doc = PdfDocument::parse(&pdf).unwrap();
+        doc.set_decipher(Box::new(move |_, _, data| xor(data)));
+        let obj = doc.get_object(2).unwrap();
+        let stream = obj.as_stream().unwrap();
+        assert_eq!(stream.rawdata, b"BT ET");
+        assert_eq!(
+            stream.dict.get("Lang"),
+            Some(&Object::Str(b"en-US".to_vec())),
+            "a string directly in the stream dictionary must be deciphered"
+        );
+        let names = stream.dict.get("Info").unwrap().as_dict().unwrap();
+        assert_eq!(
+            names.get("Names"),
+            Some(&Object::Array(vec![Object::Str(b"nested".to_vec())])),
+            "strings nested inside the stream dictionary must be deciphered"
+        );
     }
 
     #[test]
