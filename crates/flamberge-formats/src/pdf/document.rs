@@ -595,6 +595,57 @@ mod tests {
         buf
     }
 
+    /// Build a classic-xref PDF whose catalog is object 1 and whose remaining
+    /// objects are the given `(objid, body)` pairs, written verbatim.
+    fn build_pdf_with(objects: &[(u32, &[u8])]) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"%PDF-1.4\n");
+        let mut offsets = vec![(1u32, buf.len())];
+        buf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+        for (objid, body) in objects {
+            offsets.push((*objid, buf.len()));
+            buf.extend_from_slice(format!("{} 0 obj\n", objid).as_bytes());
+            buf.extend_from_slice(body);
+            buf.extend_from_slice(b"\nendobj\n");
+        }
+        let size = offsets.len() + 1;
+        let xref_pos = buf.len();
+        buf.extend_from_slice(format!("xref\n0 {}\n", size).as_bytes());
+        buf.extend_from_slice(b"0000000000 65535 f \n");
+        for (_, off) in &offsets {
+            buf.extend_from_slice(format!("{:010} 00000 n \n", off).as_bytes());
+        }
+        buf.extend_from_slice(format!("trailer\n<< /Size {} /Root 1 0 R >>\n", size).as_bytes());
+        buf.extend_from_slice(format!("startxref\n{}\n%%EOF", xref_pos).as_bytes());
+        buf
+    }
+
+    #[test]
+    fn null_after_number_keeps_its_separator() {
+        // An explicit destination such as `[3 0 R /XYZ 108 720 null]` puts
+        // `null` right after a number; without a separator the serializer
+        // emitted the single bogus token `720null`.
+        let pdf = build_pdf_with(&[(2, b"<< /D [1 0 R /XYZ 108 720 null] /N null >>")]);
+        let doc = PdfDocument::parse(&pdf).unwrap();
+        let out = PdfSerializer::new(&doc).serialize().unwrap();
+        assert!(
+            !out.windows(7).any(|w| w == b"720null"),
+            "null merged into the preceding number"
+        );
+
+        let doc2 = PdfDocument::parse(&out).unwrap();
+        assert_eq!(doc.get_object(2).unwrap(), doc2.get_object(2).unwrap());
+        let dest = doc2.get_object(2).unwrap();
+        let dest = dest
+            .as_dict()
+            .unwrap()
+            .get("D")
+            .unwrap()
+            .as_array()
+            .unwrap();
+        assert_eq!(&dest[3..], &[Object::Int(720), Object::Null]);
+    }
+
     #[test]
     fn parse_classic_pdf() {
         let pdf = build_classic_pdf();
